@@ -5,6 +5,14 @@
   "type": "module",
   "description": "The pstack engineering skill library, delivered as a BB plugin.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wy3z/bb-plugin-pstack.git"
+  },
+  "homepage": "https://github.com/wy3z/bb-plugin-pstack#readme",
+  "bugs": {
+    "url": "https://github.com/wy3z/bb-plugin-pstack/issues"
+  },
   "engines": {
     "bb": ">=0.43",
     "bbPluginSdk": ">=0.4.84"
@@ -38,6 +46,7 @@
     "assets",
     "README.md",
     "UPSTREAM-README.md",
+    "PLUGIN_OVERVIEW.md",
     "LICENSE",
     "MANIFEST.md",
     "CAPABILITIES.md",
