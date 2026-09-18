@@ -1,3 +1,9 @@
+## Getting started
+
+Install the plugin, then run `/setup-pstack`. It lists the providers this host can reach with `bb provider models` and asks which model each pstack role should use. bb keeps one provider and model per project and applies a choice per spawn, so that mapping is intent you pass along with `--provider` and `--model` when a worker starts.
+
+After that, `/poteto-mode` is the way in.
+
 ## What you get
 
 47 skills from pstack, installed once and available in every thread. Start work with `/poteto-mode`: it reads your request, picks one of 23 playbooks, and runs the other skills the playbook needs.
@@ -18,7 +24,7 @@ Skills are user-invoked. Each one carries `disable-model-invocation`, so it stay
 
 Every skill belongs to the plugin, so each one has its own switch. Settings shows a master switch and one row per skill.
 
-The skills discover the harness they run in. On bb that means `/setup-pstack` reads the model catalog with `bb provider models` and applies your choice per spawn, because bb remembers one provider and model per project. Parallel skills use `bb thread spawn` with `bb thread wait` and `bb thread output`, and a worker can take its own environment with `--new-environment worktree`. Loops use `bb automation create` instead of sleeping inside a thread.
+The skills discover the harness they run in. On bb, parallel skills use `bb thread spawn` with `bb thread wait` and `bb thread output`. A worker can take its own environment with `--new-environment worktree`. Loops use `bb automation create` instead of sleeping inside a thread.
 
 ## Requirements
 

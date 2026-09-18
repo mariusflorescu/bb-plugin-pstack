@@ -2,16 +2,6 @@
 
 pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin brings it to bb as 47 skills, each one a slash command available in every thread.
 
-Start with `/poteto-mode`. It reads your request, picks one of 23 playbooks, and runs the other skills as the steps need them. The rest of the library is what those playbooks reach for:
-
-- understanding: `/how`, `/why`, `/teach`, `/recall`, `/figure-it-out`
-- design and review: `/architect`, `/interrogate`, `/pstack-arena`, `/pstack-blast-radius`, `/swarm`
-- proof: `/create-verification-skill`, `/maintain-verification-skill`, `/pstack-tdd`
-- prose and cleanup: `/unslop`, `/technical-writing`, `/no-comments`
-- steering: 23 `principle-*` skills you can name by hand to redirect an agent mid-task
-
-Most of these are user-invoked on purpose. They carry `disable-model-invocation`, so they stay out of the model prompt until you type the name. The model gets the context when you ask for it, not before.
-
 ## install
 
 ```bash
@@ -21,6 +11,23 @@ bb plugin install git:https://github.com/wy3z/bb-plugin-pstack
 Then open Settings, then Plugins, then pstack. That page has a master switch and one switch per skill, so you can keep the set to the handful you actually use.
 
 Requires bb 0.43 or newer.
+
+## get started
+
+1. Run `/setup-pstack`. It lists the providers this host can reach with `bb provider models`, then asks which model each pstack role should use. bb keeps one provider and model per project and applies a choice per spawn, so the mapping is intent you pass along with `--provider` and `--model` when a worker starts.
+2. Use `/poteto-mode` for anything that needs rigor. It reads your request, picks one of 23 playbooks, and runs the other skills as the steps need them.
+
+## the skills
+
+The playbooks cover most of the work. The rest of the library is what they reach for:
+
+- understanding: `/how`, `/why`, `/teach`, `/recall`, `/figure-it-out`
+- design and review: `/architect`, `/interrogate`, `/pstack-arena`, `/pstack-blast-radius`, `/swarm`
+- proof: `/create-verification-skill`, `/maintain-verification-skill`, `/pstack-tdd`
+- prose and cleanup: `/unslop`, `/technical-writing`, `/no-comments`
+- steering: 23 `principle-*` skills you can name by hand to redirect an agent mid-task
+
+Most of these are user-invoked on purpose. They carry `disable-model-invocation`, so they stay out of the model prompt until you type the name. The model gets the context when you ask for it, not before.
 
 ## credit
 
