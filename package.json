@@ -1,0 +1,46 @@
+{
+  "name": "bb-plugin-pstack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The pstack engineering skill library, delivered as a BB plugin.",
+  "license": "MIT",
+  "engines": {
+    "bb": ">=0.43",
+    "bbPluginSdk": ">=0.4.84"
+  },
+  "bb": {
+    "name": "pstack",
+    "description": "Playbooks, reviewers, and principles for rigorous agent-assisted development, adapted from cursor/plugins pstack.",
+    "branding": {
+      "icon": "Layers"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "bb plugin build"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.84",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "files": [
+    "server.ts",
+    "skills",
+    "agents",
+    "docs",
+    "automations",
+    "assets",
+    "README.md",
+    "UPSTREAM-README.md",
+    "LICENSE",
+    "MANIFEST.md",
+    "CAPABILITIES.md",
+    "!**/*.test.*"
+  ]
+}
