@@ -42,9 +42,9 @@ When a bug has a cheap local test path, the whole prompt can be two words:
 
 In context, that's enough. [`/pstack-tdd`](../../skills/pstack-tdd/SKILL.md) writes the smallest test that fails for the intended reason, then the fix, then reruns the test. If a test would need broad harness setup or brittle mocks, the skill says so and uses the closest executable check instead. Don't force a test where a real command is stronger evidence.
 
-## Let the TypeScript rules load themselves
+## Let the agent pick up the TypeScript rules
 
-[`typescript-best-practices`](../../skills/typescript-best-practices/SKILL.md) has no slash command in your workflow. It loads whenever the agent touches a `.ts` or `.tsx` file and turns the type-system principles into concrete rules: discriminated unions, `unknown` at boundaries, exhaustive variants, schema-derived types.
+[`typescript-best-practices`](../../skills/typescript-best-practices/SKILL.md) has no step in your workflow. Its description tells the agent to use it when reading or editing a `.ts` or `.tsx` file, and the agent loads it on its own when it judges the description fits. No file path triggers it, so when the rules must apply, put `/typescript-best-practices` in your prompt. It turns the type-system principles into concrete rules: discriminated unions, `unknown` at boundaries, exhaustive variants, schema-derived types.
 
 ## Clean before you commit
 
@@ -66,9 +66,9 @@ Comments need their own pass, and not from the agent that wrote them. An author 
 /no-comments the diff
 ```
 
-[`/no-comments`](../../skills/no-comments/SKILL.md) spawns [Comment Sicko](../../skills/no-comments/references/comment-sicko.md), a read-only reviewer that runs in its own child thread. Its keep list is short: license headers, doc comments on a public API, links that explain what code can't, behavior forced by an external dependency you can't reshape. Everything else goes. A surprise in your own code gets no such pass. The comment comes back as a refactor flag, and `/no-comments` fixes the flags it accepts at the root cause. When a comment claims a constraint, "do not remove", the skill offers to encode the claim as a type, test, or lint. Either way, the comment comes out.
+[`/no-comments`](../../skills/no-comments/SKILL.md) spawns [Comment Sicko](../../skills/no-comments/references/comment-sicko.md) as a child thread in your environment, so it deletes comments in your working tree. Its keep list is short: license headers, doc comments on a public API, links that explain what code can't, behavior forced by an external dependency you can't reshape. Everything else goes. A surprise in your own code gets no such pass. The comment comes back as a refactor flag. `/no-comments` then audits Comment Sicko's diff and report, rejects application-code edits and scope escapes, restores a deletion only when a keep-list exception proves it, and fixes the flags it accepts at the root cause. When a comment claims a constraint, "do not remove", the skill offers to encode the claim as a type, test, or lint. Either way, the comment comes out.
 
-The division of labor is worth keeping straight. The de-slop pass cleans slop out of the code, `/unslop` cleans it out of prose, and `/no-comments` hands the comments to a reviewer who didn't write them.
+The division of labor is worth keeping straight. The de-slop pass cleans slop out of the code, `/unslop` cleans it out of prose, and `/no-comments` hands the comments to an agent that didn't write them.
 
 **Pitfall:** cleanup is not optional polish. A diff with narrating comments and defensive dead weight reads as unfinished to reviewers, and the extra code is where the next bug hides. If the diff feels padded, say `deslop it` before you commit, not after review calls it out.
 

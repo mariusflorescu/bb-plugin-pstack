@@ -79,7 +79,7 @@ Worktrees accumulate. When disk gets tight, ask:
 /poteto-mode what's eating my disk? prune the worktrees that are safe to prune.
 ```
 
-The [Worktree cleanup playbook](../../skills/poteto-mode/playbooks/worktree-cleanup.md) classifies every worktree by merge state, uncommitted work, and which bb threads still use it, including any that are pinned or running. It deletes only what that evidence clears and pauses for your call on anything holding uncommitted work.
+The [Worktree cleanup playbook](../../skills/poteto-mode/playbooks/worktree-cleanup.md) classifies every worktree by merge state, uncommitted work, and which bb threads still touch it. Untracked files that git doesn't ignore count as uncommitted work, and so does a detached commit that no branch, tag, or remote ref holds. It deletes only what that evidence clears. It pauses for your call on anything holding that work, anything a pinned or running thread uses, and anything where archiving its threads would reach another environment. When it can't read bb, it holds every worktree.
 
 ## Leave it running
 

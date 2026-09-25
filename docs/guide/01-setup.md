@@ -22,7 +22,13 @@ Run:
 
 [`/setup-pstack`](../../skills/setup-pstack/SKILL.md) detects the providers and models this bb host offers, asks for a reasoning budget, shows you each role (code delegates, judgment, the review panels), and asks what you want. Answer the questions. It writes the pstack plugin's `models` setting, one `role: provider / model @effort` line per role. bb injects that setting into every new thread as the pstack delegation rules, so each role a skill spawns runs as a bb child thread on the model you picked.
 
-You only change what you care about. Setup starts from your current setting, or from the plugin default the first time, so a rerun keeps your earlier choices. You can also edit the **Role models** field on the plugin's settings page, or run `bb plugin config pstack set models`. To restore the defaults, run `bb plugin config pstack unset models`.
+You only change what you care about. Setup starts from your current setting, or from the plugin default the first time, so a rerun keeps your earlier choices. You can also edit the **Role models** field on the plugin's settings page. From a terminal, put one line per role in a file and write the whole value in one call:
+
+```bash
+bb plugin config pstack set models "$(cat pstack-models.txt)"
+```
+
+`set` replaces the whole value, and a role the value leaves out keeps its default line. To restore the defaults, run `bb plugin config pstack unset models`.
 
 You might be wondering whether a role can follow whatever model the current thread runs. It can't. Every role names a provider, model, and effort, and pstack passes all three when it spawns that role's child thread. For a panel role the value is a list, and one child thread runs per entry, so the list length sets the panel size. Setup also configures `swarm workers`, the default model for every `/swarm` worker unless a race names a model for each arm.
 
