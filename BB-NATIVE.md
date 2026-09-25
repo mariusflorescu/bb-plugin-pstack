@@ -46,6 +46,7 @@ not restate the mapping.
 | Bugbot | Any review bot on the PR (Bugbot, `claude[bot]`, Copilot). |
 | Cursor hooks, `.cursor/` rules, Cursor settings UI | BB: `.bb/AGENTS.md` (project), `~/.bb/AGENTS.md` (user), `.bb/skills/`, or the plugin settings (`bb plugin config pstack ...`). |
 | Ask-the-user tool names | "ask the user" (BB routes the provider's native question tool). |
+| A skill named in bold (`**unslop**`), loaded by Cursor on demand | Read `../<name>/SKILL.md` from the naming skill's base directory. Most pstack skills are user-invoked only (`disable-model-invocation`), so a provider's skill tool will not load them. The injected rules say so once. |
 
 ## Out of scope for adaptation
 

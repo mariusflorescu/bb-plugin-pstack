@@ -155,6 +155,8 @@ for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"
 
 Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours.
 
+pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it.
+
 Role models (provider / model @effort):
 ${models}`;
 }
