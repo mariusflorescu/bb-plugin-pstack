@@ -10,6 +10,8 @@ Investigate the motivation and intent behind code.
 
 Companion to the `how` skill. `how` answers what the code does and how it works. `why` answers what forces led to its shape.
 
+Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.
+
 ## Operating Posture
 
 Operate as a **careful, cautious, and precise investigator**. Be honest about what you know vs what you're inferring. Read `references/epistemics.md` for the full confidence framework and phrasing guide. The synthesizer must follow it.
@@ -55,11 +57,11 @@ Capture this as seed context (file paths, symbols, commits, PR numbers, linked t
 
 ## Step 3. Spawn Parallel Investigators (default posture)
 
-**Default to the full parallel investigation.** Confirm the harness's concurrency capability against its real mechanisms before choosing the degraded path. Only when it genuinely cannot run the investigators concurrently, run them one after another in this session and state that the categories were not searched independently.
+**Default to the full parallel investigation.**
 
 ### Discovery
 
-Before spawning investigators, list the available MCPs from the running harness environment. Use the available-tools map when present. Otherwise inspect the harness's own configuration for enabled MCP servers.
+Before spawning investigators, list the available MCPs from the Cursor environment. Use the available-tools map when present. Otherwise inspect the `mcps/` directory Cursor exposes for enabled MCP servers.
 
 Map each available MCP to one evidence category:
 
@@ -78,9 +80,9 @@ Aim for a complete **coverage map**, not a minimal one. Document the null, don't
 Launch all matching investigators in a single message so they run concurrently. Don't ask one agent to cover multiple MCPs.
 
 Subagent config (each):
-- Delegation target: a general-purpose agent when the harness has one
-- `model`: your configured why-investigators model (discover a fast code model)
-- A mode that keeps MCP/tool access available (agent mode). **Do not use a read-only/ask mode.** It strips MCP access, which disables MCP-backed investigators entirely. Investigators still shouldn't write anything.
+- `subagent_type`: `generalPurpose`
+- `model`: the `why investigators` line, default `grok-4.7-xhigh-fast`
+- `readonly`: `false` (agent mode). **Do not use readonly/Ask mode.** It strips MCP access, which disables MCP-backed investigators entirely. Investigators still shouldn't write anything.
 
 Each investigator gets:
 1. The base prompt from `references/investigator-prompt.md`
@@ -122,9 +124,9 @@ If your scope assessment suggests a single-commit trivial target where the PR de
 
 Spawn one synthesizer subagent:
 
-- Delegation target: a general-purpose agent when the harness has one
-- `model`: your configured why-synthesizer model (discover the session's strongest judgment model)
-- A mode that keeps MCP/tool access available (agent mode). The synthesizer's quality check spot-verifies citations, which can require MCP access. A read-only or ask mode strips tool/MCP access and defeats that.
+- `subagent_type`: `generalPurpose`
+- `model`: the `why synthesizer` line, default `claude-opus-5-5-max`
+- `readonly`: `false` (agent mode). The synthesizer's quality check spot-verifies citations, which can require MCP access. Readonly/Ask mode strips MCPs and defeats that.
 
 The synthesizer gets:
 1. The investigator findings, including any null results and any categories skipped with justification
@@ -154,9 +156,3 @@ After the Sources Consulted block, if the user's `why` question is a precursor t
 - `references/source-playbook.md`. Index pointing at the category playbooks below.
 - `references/sources/*.md`. One self-contained example playbook per category, plus cross-cutting `incident-postmortem.md`. Give an investigator the single file that matches its category and adapt it to the available MCP.
 - `references/synthesizer-prompt.md`. Prompt template for the synthesizer subagent, including the output format.
-
-## Provenance and local adaptations
-
-Adapted for this personal skill library from the pstack plugin, `cursor/plugins` at commit `889ec4b68fa5aab0e867dad71ec3fdf386ae48f3`, path `pstack/skills/why/SKILL.md`. MIT, Copyright (c) 2026 Lauren Tan.
-
-This copy is harness and provider agnostic. Model names, delegation APIs, transcript paths, question tools, config files, and hosting/secret mechanisms that were specific to the upstream author's environment are replaced with instructions to discover what the running harness actually offers. Where a needed capability is absent, the instruction says to surface that rather than silently substituting a paid or fabricated default. Upstream names appearing below inside examples or historical notes are inactive references, not instructions.

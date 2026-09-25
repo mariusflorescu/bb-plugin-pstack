@@ -20,8 +20,8 @@ Scan for:
 
 Findings must point to skills, tools, or MCPs invoked in this transcript. Speculative routings to skills the parent never opened do not count. To check whether a skill was used, scan the transcript for:
 
-- `Read` tool calls against any `SKILL.md` file (the active catalog paths the harness exposes (for example a project `.agents/skills/` or `.bb/skills/`, or a user skills root such as `~/.agents/skills/`))
-- delegation prompts that name a skill path
+- `Read` tool calls against any `SKILL.md` file (workspace `.cursor/skills/`, user-level `~/.cursor/skills/`, or plugin-installed paths under `~/.cursor/plugins/`)
+- `Task` prompts that name a skill path
 - Tool calls (Shell, Grep, MCP, etc.) that match a skill's documented commands
 
 Two valid finding shapes:
@@ -31,7 +31,7 @@ Two valid finding shapes:
 
 The "skill should have been invoked but wasn't" bullet above is the canonical missed-trigger case. Route those to `tune description`. If the skill was neither invoked nor a missed-trigger candidate, drop it.
 
-Surface 3-5 durable learnings. For each:
+List each durable learning you find. For each:
 - Principle: one sentence naming the contrarian or second-order observation. Don't restate the obvious learning. Name the one beneath it.
 - Evidence: the exact moment in the transcript (turn number or short quote, including what was said AND what wasn't).
 - Routing: most relevant existing skill (give the `SKILL.md` path as it appears in the transcript), OR `tune description: <skill path>` when the skill should have triggered but didn't, OR "new skill: <kebab-name>".

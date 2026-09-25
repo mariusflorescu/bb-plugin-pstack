@@ -33,21 +33,20 @@ Write one clear paragraph. If you're unsure about the intent, ask the user befor
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message using the harness's native delegation capability when it has one. Confirm that capability against the harness's real mechanisms before falling back; do not assume absence. Only when it genuinely has none, run each reviewer in this session one after another and state that they did not review independently, so the cross-model signal is weakened. Use the `interrogate reviewers` list from the session's discovered per-role model choices when present, one reviewer per entry, extending or shrinking the Reviewer A/B/C/D labels below to the chosen count. Otherwise pick distinct reasoning families from the models the session offers, as in the table below.
+Launch all reviewers in a single message using the Task tool. Use the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`, one reviewer per entry, extending or shrinking the Reviewer A/B/C labels below to the configured entry count. If the rule or that line is missing, use the table defaults.
 
 | Subagent | Default model |
 |----------|---------------|
-| Reviewer A | the session's strongest judgment model |
-| Reviewer B | a strong tooling/judgment model |
-| Reviewer C | a fast code model |
-| Reviewer D | (optional) another strong reasoning model, when a fourth distinct family is available |
+| Reviewer A | `claude-opus-5-5-max` |
+| Reviewer B | `gpt-5.6-sol-max` |
+| Reviewer C | `grok-4.7-xhigh-fast` |
 
 For each reviewer:
-- Delegation target: a general-purpose agent when the harness has one
-- `model`: the configured `interrogate reviewers` entry, or a discovered model with no configured choice
-- Read-only against the repository
+- `subagent_type`: `generalPurpose`
+- `model`: the configured `interrogate reviewers` entry, or the table default with no configured line. For an `auto` or `inherit-parent` entry, omit `model` so that reviewer runs on the parent model.
+- `readonly`: `true`
 
-If a chosen model is rejected as unavailable when you try to spawn, re-check the live catalog, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with the valid model, and update the configured choice in a separate reviewable change. Do not block the review on the model issue. If the configured choice is inherit-the-parent, omit the model field instead; never treat that as a broken model.
+If the Task tool rejects a configured entry, run that reviewer on the table default of its family and say so. Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`. With no family match, use Reviewer A's default. If it rejects a table default, check the valid slugs in the Task tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with it, and open a separate PR to update the default table. Do not block the review on the slug issue. Never treat an alias entry as a rejected slug or apply either fallback to it.
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent
@@ -109,9 +108,3 @@ Present the verdict in this structure:
 
 ### Agreement Map
 [Where did models agree, where did they diverge, and what does the pattern of agreement/disagreement tell us?]
-
-## Provenance and local adaptations
-
-Adapted for this personal skill library from the pstack plugin, `cursor/plugins` at commit `889ec4b68fa5aab0e867dad71ec3fdf386ae48f3`, path `pstack/skills/interrogate/SKILL.md`. MIT, Copyright (c) 2026 Lauren Tan.
-
-This copy is harness and provider agnostic. Model names, delegation APIs, transcript paths, question tools, config files, and hosting/secret mechanisms that were specific to the upstream author's environment are replaced with instructions to discover what the running harness actually offers. Where a needed capability is absent, the instruction says to surface that rather than silently substituting a paid or fabricated default. Upstream names appearing below inside examples or historical notes are inactive references, not instructions.

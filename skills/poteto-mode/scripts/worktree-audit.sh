@@ -22,16 +22,9 @@ prs=$(mktemp)
 gh pr list --author "@me" --state all --limit 1000 \
 	--json number,state,headRefName 2>/dev/null > "$prs" || echo "[]" > "$prs"
 
-# Transcripts dir. Set PSTACK_TRANSCRIPTS_DIR to the harness's per-workspace
-# transcript directory. The default is the upstream author's Cursor layout; on
-# another harness, point it at that harness's documented location or leave it
-# unset and the LAST_CHAT column is blank.
-if [ -n "${PSTACK_TRANSCRIPTS_DIR:-}" ]; then
-	transcripts="$PSTACK_TRANSCRIPTS_DIR"
-else
-	slug=$(printf '%s' "$main_wt" | sed 's#^/##; s#/#-#g')
-	transcripts="$HOME/.cursor/projects/$slug/agent-transcripts"
-fi
+# Transcripts dir: ~/.cursor/projects/<slugified-repo-path>/agent-transcripts.
+slug=$(printf '%s' "$main_wt" | sed 's#^/##; s#/#-#g')
+transcripts="$HOME/.cursor/projects/$slug/agent-transcripts"
 now=$(date +%s)
 
 printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tLAST_CHAT\tBUCKET\tWORKTREE\n"

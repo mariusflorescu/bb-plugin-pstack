@@ -1,119 +1,74 @@
 ---
 name: setup-pstack
-description: "Choose which models pstack uses per role, discovered from what the running harness actually offers, and record it through that harness's own configuration when one exists. Use for /setup-pstack, \"configure pstack models\", or changing pstack's model choices."
+description: Configure which models pstack uses per role and at what reasoning budget. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
 ---
 
 # Setup pstack
 
-Work out which models this session can actually delegate to, let the user pick one per pstack role, and record the choices through the host's real configuration mechanism, if it has one. No model name is hardcoded here on purpose: the available models and the storage mechanism differ between providers and harnesses.
+Write `~/.cursor/rules/pstack-models.mdc`, an always-applied rule that sets pstack's model per role.
 
 ## Steps
 
-### 1. Find the harness's own model mechanisms first
+### 1. Detect available models
 
-Before inventing anything, use what the host already exposes.
+Enumerate the model slugs you can pass to a `Task` subagent in this session. That is the dependable source. If Cursor also exposes a models API or CLI that lists the user's entitled models, prefer it for completeness. If you cannot detect any, ask the user to paste the slugs they have access to. Never write a real slug you have not confirmed is available. The aliases `inherit-parent` and `auto` are always valid even though they are not detected slugs.
 
-On a BB host:
+### 2. Load current state
 
-- **Catalog.** `bb provider list` lists every provider this host has — `pi`,
-  `codex`, the `acp-*` agents, `muse`, and anything else installed — so enumerate
-  all of them, not just the one this thread runs on. `bb provider models
-  <providerId>` lists that provider's models; add `--json` to get each model's
-  real `supportedReasoningEfforts` and `defaultReasoningEffort`, which the
-  default table view omits. Both commands take `--environment <id>` or
-  `--machine <id-or-name>`: use the workspace you are actually spawning into,
-  because some providers scope their model list per workspace and the answer can
-  differ from the host default.
-- **Per-spawn choice, not a stored role table.** BB keeps one remembered
-  provider/model pair per project — what a new thread gets when the flags are
-  omitted — and applies a model per spawn:
-  `bb thread spawn --provider <id> --model <id> --reasoning-level <level>`.
-  There is no per-role model record, no per-role model map, and no CLI that
-  reads or writes one. Do not hunt for one, and do not write a file expecting
-  BB to load it as configuration.
-- **What that means for role intent.** The mapping you settle on here is intent
-  you honor by passing explicit flags when you spawn workers, not a setting BB
-  stores and re-applies on its own.
+The default role-to-model mapping is the rule shape shown in step 5 below. If `~/.cursor/rules/pstack-models.mdc` already exists, read it and treat its `# budget` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it.
 
-On another host, discover the equivalent: a model catalog the session can query, and a configuration file or setting the harness reads. If no catalog and no config authority exist, do not fabricate one.
+### 3. Budget, map, and confirm
 
-### 2. Discover the available models
+**(a) Ask for a budget.** Prefer AskQuestion over free text. Offer these four options with these exact labels, and name the current budget when the rule records one.
 
-Get the real catalog of models this session can run or delegate to. Prefer a models API, config file, or CLI the harness exposes for the current session. If you can only discover identifiers by trying, do not guess. If you cannot discover any, say so and ask the user to paste the identifiers they have access to.
+- `unlimited — keep max`
+- `large — xhigh reasoning`
+- `medium — high reasoning`
+- `small — medium reasoning`
 
-Never invent or assume a model. Do not carry over the upstream author's slugs (`grok-4.6-fast-xhigh`, `claude-fable-5-1-thinking-max`, and similar): they are unrelated to whatever the user actually has.
+**(b) Apply it.** Build the working table from the skill defaults, and on a re-run keep any role you changed by family, list, or alias (`inherit-parent`, `auto`). `unlimited` leaves every effort as in that table. `large`, `medium`, and `small` set the effort token of every real slug, panel entries included, to `xhigh`, `high`, or `medium`. The effort token is the last token, or the one before a trailing `fast`, on the ladder `max` > `xhigh` > `high` > `medium` > `low`. If the result is not a detected slug, use the same family's detected slug with the highest effort at or below the target, else mark the role as needing a choice. `inherit-parent` and `auto` do not change. So `small` turns `claude-opus-5-5-max` into `claude-opus-5-5-medium`, and `grok-4.7-xhigh-fast` into `grok-4.7-medium-fast`.
 
-Inheriting the parent model is a valid choice only where the harness supports it, and omission does not imply inheritance. On a BB host, omitting `--model` from `bb thread spawn` falls back to the project's remembered provider/model, not the parent thread's model, so a pstack fan-out cannot inherit that way. The one place BB does inherit is a workflow worker: an agent call with no explicit selection inherits the run's origin provider, model, and reasoning level. Treat inherit-the-parent as valid only where you have confirmed it; otherwise leave it out.
-
-### 3. Map and confirm
-
-Show every pstack role with its current choice, marking any value not in the discovered set as needing a choice. Ask whether to accept as-is or change specific roles, offering only discovered models plus an inherit-the-parent option where it is valid. Prefer the harness's structured question tool when it has one; otherwise ask in plain text.
-
-Define the roles as you map them; none of the following behaviours are host-native unless the host says so:
-
-- The **fan-out** of panel roles (arena runners, architect runners, interrogate reviewers) is pstack's own: one subagent per list entry, so the list length sets the count. Record it as the user's intent, not as a harness guarantee.
-- `arena cross-judge pool` is a pool from which the arena picks one value whose family differs from the parent's when it can.
-- `swarm workers` is the default model for every worker unless a race assigns another per arm.
-- Diversity across a panel is optional and bounded by real eligible choices. Do not require a fixed set of model families, and do not invent a paid model to create diversity.
+**(c) Show the roles and confirm.** Show every role with its model, marking any real slug not in the detected set as needing a choice. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent chat model, which is how Auto users stay on Auto) as the options. Prefer AskQuestion over free text. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the count. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
 
 ### 4. Validate
 
-Every chosen model must be in the discovered set, or be a valid inherit-the-parent choice. If a chosen model is not available, stop and ask again. Never write a slug you have not confirmed is available on this host.
+Every real slug written must be in the detected set. `inherit-parent` and `auto` always pass. If a chosen real slug is not available, stop and ask again.
 
-pstack roles, with the upstream defaults as labels only:
+### 5. Write the rule
+
+Write `~/.cursor/rules/pstack-models.mdc` with `alwaysApply: true`, a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels poteto-mode uses. Overwrite the whole file so re-runs stay idempotent. Shape:
 
 ```
-feature, refactoring
-bug-fix
-perf-issue
-hillclimb
-judgment and prose
-hardest tasks
-how explorer
-how explainer
-why investigators
-why synthesizer
-reflect tooling
-reflect judgment, divergent, synthesizer
-arena runners                 (list)
-arena cross-judge pool        (list, families should differ)
-swarm workers
-architect runners             (list)
-interrogate reviewers         (list)
+---
+description: pstack per-role model choices (overrides skill defaults)
+alwaysApply: true
+---
+# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
+# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
+# budget: unlimited (max)
+feature, refactoring: grok-4.7-xhigh-fast
+bug-fix: grok-4.7-xhigh-fast
+perf-issue: grok-4.7-xhigh-fast
+hillclimb: grok-4.7-xhigh-fast
+judgment and prose: claude-opus-5-5-max
+hardest tasks: claude-opus-5-5-max
+how explorer: grok-4.7-xhigh-fast
+how explainer: claude-opus-5-5-max
+why investigators: grok-4.7-xhigh-fast
+why synthesizer: claude-opus-5-5-max
+reflect tooling: gpt-5.6-sol-max
+reflect judgment, divergent, synthesizer: claude-opus-5-5-max
+arena runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
+arena cross-judge pool: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
+swarm workers: grok-4.7-xhigh-fast
+architect runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
+interrogate reviewers: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
 ```
 
-### 5. Record the choices through the host's mechanism
+### 6. Confirm
 
-Write the choices to the configuration authority the running harness actually provides. Choose per host:
-
-- **BB host.** Write nothing on the user's behalf. BB has no configuration
-  authority for a per-role model table, and its only persisted execution state is
-  the single remembered project provider/model pair, which is a default for new
-  threads rather than a role map. Confirm the mapping, then either (a) hand it
-  back for the user to keep in context, to apply when you spawn workers with
-  explicit `--provider`, `--model`, and `--reasoning-level` flags, or (b) if the
-  user wants it to persist, offer to save it where the project already keeps
-  instructions (`.bb/AGENTS.md` or a project skill) and say plainly that agents
-  read it as guidance — never that BB loads it as configuration.
-- **Another harness.** If it has a settings or skills directory the harness reads, write a config file there in the shape it expects. If it has none, do not fabricate a portable file and do not claim it will load elsewhere. Present the mapping in the reply for the user to keep and say it is not auto-loaded.
-
-Write only discovered values (or a valid inherit-the-parent choice), and keep the write idempotent.
-
-### 6. Confirm, and state the scope honestly
-
-Tell the user:
-
-- Where the choices were recorded, and whether that host treats them as advisory or authoritative.
-- What that host does with them (this harness loads them for new sessions or threads; another harness will not).
-- That this configuration is host-specific and claims no portability across harnesses.
-- That a missing, unknown, or differing native capability was surfaced rather than silently substituted.
+Tell the user the rule was written and that it applies to new sessions. Re-running this skill updates it.
 
 ### 7. Offer a verification skill (optional)
 
-Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one." On yes, invoke the local `create-verification-skill` skill if it is installed (it resolves wherever pstack lives: workspace, user, or plugin). On no, move on without pushing.
-
-## Provenance and local adaptations
-
-Adapted for this personal skill library from the pstack plugin, `cursor/plugins` at commit `889ec4b68fa5aab0e867dad71ec3fdf386ae48f3`, path `pstack/skills/setup-pstack/SKILL.md`. MIT, Copyright (c) 2026 Lauren Tan.
-
-This copy is harness and provider agnostic. Model names, delegation APIs, transcript paths, question tools, config files, and hosting/secret mechanisms that were specific to the upstream author's environment are replaced with instructions to discover what the running harness actually offers. Where a needed capability is absent, the instruction says to surface that rather than silently substituting a paid or fabricated default. Upstream names appearing below inside examples or historical notes are inactive references, not instructions.
+Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with /create-verification-skill." On yes, invoke `/create-verification-skill` (resolves wherever pstack is installed: workspace, user, or plugin). On no, move on without pushing.

@@ -112,22 +112,3 @@ Before:
 After:
 
 > `budget.mjs` reads the committed budget from `budget.json` and counts the files that import protos. If the count exceeds the budget, CI fails. Run `budget.mjs --write` only to lower the budget.
-
-## Review checklist
-
-Apply to any prose this skill covers. Item 1 applies only to document sets:
-
-1. Is each file one Diátaxis mode, with links where modes meet?
-2. Is every instruction written as a command, with its condition in front?
-3. Does any sentence carry two instructions or two thoughts? Split it.
-4. Can any word be cut without losing meaning? Cut it.
-5. Is "only" next to the word it changes? Does every "it" point at one thing? Does every clause keep its verb?
-6. Does each thing have exactly one name across the docs?
-7. Would a developer say these words out loud? Replace invented metaphors and fancy synonyms with the plain word or the real symbol name.
-8. Are all symbols, paths, and counts real at this commit, with the commands that regenerate the counts?
-
-## Provenance and local adaptations
-
-Adapted for this personal skill library from the pstack plugin, `cursor/plugins` at commit `889ec4b68fa5aab0e867dad71ec3fdf386ae48f3`, path `pstack/skills/technical-writing/SKILL.md`. MIT, Copyright (c) 2026 Lauren Tan.
-
-This copy is harness and provider agnostic. Model names, delegation APIs, transcript paths, question tools, config files, and hosting/secret mechanisms that were specific to the upstream author's environment are replaced with instructions to discover what the running harness actually offers. Where a needed capability is absent, the instruction says to surface that rather than silently substituting a paid or fabricated default. Upstream names appearing below inside examples or historical notes are inactive references, not instructions.

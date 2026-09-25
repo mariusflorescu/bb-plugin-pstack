@@ -2,7 +2,7 @@
 
 **You own the skill's voice.**
 
-1. Use the discovered skill-authoring skill when one is installed (on a BB host, `skill-creator`); otherwise draft the file directly: a `---` frontmatter block with `name` (matching the directory) and `description`, then the instruction body. No built-in authoring tool is assumed to exist.
+1. Use the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).
 2. Validate the skill: frontmatter has `name` and `description`, referenced files exist, cross-skill links resolve.
 3. Test cases if structural. Skip if subjective.
 4. Run **Opening a PR**.
