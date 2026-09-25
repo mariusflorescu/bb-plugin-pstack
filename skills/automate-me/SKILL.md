@@ -14,7 +14,7 @@ This skill orchestrates three others: an inline mining pass (see step 1), the `s
 
 ### 0. Check for an existing skill
 
-Run `bb skill list --json` and look for a `<handle>-mode` entry. It covers project skills (`.bb/skills/<name>/SKILL.md`), user skills (`~/.bb/skills/<name>/SKILL.md`), plugin skills, and each provider's own skill folders, and each entry's `filePath` says where the skill lives. If one exists, ask the user to confirm intent (unless they already said "update my skill" or similar):
+Run `bb skill list --environment "$BB_ENVIRONMENT_ID" --json` and look for a `<handle>-mode` entry. It covers project skills (`.bb/skills/<name>/SKILL.md`), user skills (`~/.bb/skills/<name>/SKILL.md`), plugin skills, and each provider's own skill folders, and each entry's `filePath` says where the skill lives. If one exists, ask the user to confirm intent (unless they already said "update my skill" or similar):
 
 - Update the existing skill (default for repeat runs)
 - Start fresh (rare, ask why before doing it)
@@ -26,9 +26,9 @@ Update mode changes the rest of the flow:
 
 ### 1. Mine their history
 
-Scope the history before fanning out. Use only the current project (`$BB_PROJECT_ID`). Don't read other projects' threads. That crosses project boundaries and reads private chats from unrelated projects. `bb thread list --project "$BB_PROJECT_ID" --json` lists its threads with `updatedAt`, and `bb project history "$BB_PROJECT_ID" --json` lists the user's own prompts, where corrections and stated preferences show most plainly.
+Scope the history before fanning out. Use only the current project (`$BB_PROJECT_ID`). Don't read other projects' threads. That crosses project boundaries and reads private chats from unrelated projects. `bb thread list --project "$BB_PROJECT_ID" --json` lists its threads with `updatedAt`.
 
-Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by `updatedAt` into 3 slices so each has enough material). Each slice's brief names its time range and thread IDs. The child reads those threads with `bb thread log <id>` and the user's prompts in that range from `bb project history`, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
+Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by `updatedAt` into 3 slices so each has enough material). Each slice's brief names its time range and thread IDs. The child reads each of those threads whole with `bb thread log <id> --format verbose --all`, where the user's follow-up turns carry most corrections and stated preferences, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
 
 - Response preferences (length, tone, format, "dumb it down" corrections)
 - Delegation habits (subagents, models, specialized workflows, parallelism)
