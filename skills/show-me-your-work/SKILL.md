@@ -54,7 +54,7 @@ Commit it only when the work is ambitious enough that a reviewer needs the trail
 
 ## Audit the log against the transcript
 
-At the end of the run, before handing back, check the log told the truth. Read this run's transcript with `bb thread log --self --format verbose --all`. Work this run delegated sits in its children's logs (`bb thread list --parent-thread "$BB_THREAD_ID"`, then `bb thread log <id>`). Read nothing beyond this thread and its children. Other threads hold unrelated private chats. Walk this run's rows against what actually happened. Each stretch of them begins at one of this run's `start` rows, or at the first row if this run created the log, and ends at the next `start` row of another run:
+At the end of the run, before handing back, check the log told the truth. Save this run's transcript as raw events (`bb thread log --self --format json --all > "$BB_THREAD_STORAGE/transcript.json"`) and check against those. The verbose timeline can drop a command's output, so it cannot confirm evidence. Work this run delegated sits in its children's logs (`bb thread list --parent-thread "$BB_THREAD_ID" --include-hidden --json`), read the same way. Read nothing beyond this thread and its children. Other threads hold unrelated private chats. Walk this run's rows against what actually happened. Each stretch of them begins at one of this run's `start` rows, or at the first row if this run created the log, and ends at the next `start` row of another run:
 
 - Check that every row maps to a real decision or action.
 - Check that each row's evidence resolves and shows what the row claims.
@@ -64,7 +64,7 @@ Correct the log, not the story. The audit never edits or removes a row, even an 
 
 ## Cross-model review of the trail
 
-Before handing back, spawn a child thread on a different model family from the one that did the work. Per the pstack delegation rules, that is the first `arena cross-judge pool` entry whose family differs from yours. Self-review is not a substitute. Its brief says read-only and gives the log's path and this thread's ID. The reviewer reads the audit trail and the run's transcript (`bb thread log <id> --format verbose --all`), then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
+Before handing back, spawn a child thread on a different model family from the one that did the work. Per the pstack delegation rules, that is the first `arena cross-judge pool` entry whose family differs from yours. Self-review is not a substitute. Its brief says read-only and gives the log's path and this thread's ID. The reviewer reads the audit trail and the run's transcript (`bb thread log <id> --format json --all`), then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
 
 - Decisions logged with weak or absent evidence.
 - Verification steps skipped or claimed without proof in the transcript.
