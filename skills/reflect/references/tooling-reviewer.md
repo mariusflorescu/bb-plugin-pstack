@@ -18,7 +18,7 @@ Examples of the pattern:
 - User describes a flaky test the agent could have queried via an observability MCP. Routing: the debugging skill should mention the observability MCP.
 - User links a chat thread the agent could have fetched via a chat MCP. Routing: the relevant skill should mention the chat MCP.
 
-Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).
+Read the active transcript with `bb thread log <THREAD_ID> --format verbose --all` (or use the digest below if no thread ID is given). When it points at a child thread's work, `bb thread list --parent-thread <THREAD_ID>` lists the children and `bb thread log <id>` reads one.
 
 Scan for:
 - Tool invocations and command flags the agent had to discover
@@ -32,8 +32,8 @@ Scan for:
 
 Findings must point to skills, tools, or MCPs invoked in this transcript. Speculative routings to skills the parent never opened do not count. To check whether a skill was used, scan the transcript for:
 
-- `Read` tool calls against any `SKILL.md` file (workspace `.cursor/skills/`, user-level `~/.cursor/skills/`, or plugin-installed paths under `~/.cursor/plugins/`)
-- `Task` prompts that name a skill path
+- Slash commands (`/<skill-name>`), skill-tool calls, and reads of any `SKILL.md` file (project `.bb/skills/`, user `~/.bb/skills/`, or a plugin skill)
+- `bb thread spawn` briefs that name a skill or its path
 - Tool calls (Shell, Grep, MCP, etc.) that match a skill's documented commands
 
 Two valid finding shapes:
@@ -46,10 +46,10 @@ If a skill was neither invoked nor a missed-trigger candidate, drop it.
 List each durable learning you find. For each:
 - Principle: one sentence naming the convention or technical fact. Concrete enough that a future agent recognizes when it applies.
 - Evidence: the exact moment in the transcript (turn number or short quote, including the command or flag).
-- Routing: most relevant existing skill (give the `SKILL.md` path as it appears in the transcript), OR `tune description: <skill path>` when the skill should have triggered but didn't, OR "new skill: <kebab-name>".
+- Routing: most relevant existing skill (give its name, plus its `SKILL.md` path when the transcript shows one), OR `tune description: <skill path>` when the skill should have triggered but didn't, OR "new skill: <kebab-name>".
 
 Skip trivial things (typos, retries). Skip anything already obvious from the existing skill the parent followed. Skip implementation details that drift: specific SHAs, current file paths, version numbers, exact byte counts. Convention generalizes. Pinned details don't.
 
 Return as a numbered list. No exposition.
 
-<DIGEST IF FILE PATH UNAVAILABLE>
+<DIGEST IF THREAD ID UNAVAILABLE>
