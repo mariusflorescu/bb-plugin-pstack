@@ -1,74 +1,76 @@
 ---
 name: setup-pstack
-description: Configure which models pstack uses per role and at what reasoning budget. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
+description: Configure which models pstack uses per role and at what reasoning budget. Detects the providers and models this BB host offers and writes the pstack plugin's models setting, which every new thread receives as the pstack delegation rules. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
 ---
 
 # Setup pstack
 
-Write `~/.cursor/rules/pstack-models.mdc`, an always-applied rule that sets pstack's model per role.
+Write the pstack plugin's `models` setting. BB injects it into every new thread as the pstack delegation rules, so each pstack role spawns its BB child thread with the provider, model and reasoning effort chosen here.
 
 ## Steps
 
 ### 1. Detect available models
 
-Enumerate the model slugs you can pass to a `Task` subagent in this session. That is the dependable source. If Cursor also exposes a models API or CLI that lists the user's entitled models, prefer it for completeness. If you cannot detect any, ask the user to paste the slugs they have access to. Never write a real slug you have not confirmed is available. The aliases `inherit-parent` and `auto` are always valid even though they are not detected slugs.
+Run `bb provider list`, then `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json` for every provider it lists. Each model carries its `id`, its `supportedReasoningEfforts` and its `defaultReasoningEffort`. The environment flag matters because some providers scope their model list per workspace. A provider whose command fails or returns no models is unavailable; say so and leave it out. That catalog is the only source. Never write a provider, model or effort you have not seen in it.
 
 ### 2. Load current state
 
-The default role-to-model mapping is the rule shape shown in step 5 below. If `~/.cursor/rules/pstack-models.mdc` already exists, read it and treat its `# budget` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it.
+Run `bb plugin config pstack --json` and read the `models` value. When it is unset, the current state is the plugin default the same command shows. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it. A `# budget:` line records the last budget.
 
 ### 3. Budget, map, and confirm
 
-**(a) Ask for a budget.** Prefer AskQuestion over free text. Offer these four options with these exact labels, and name the current budget when the rule records one.
+**(a) Ask for a budget.** Ask the user with these four options and these exact labels, and name the current budget when the setting records one.
 
-- `unlimited — keep max`
-- `large — xhigh reasoning`
-- `medium — high reasoning`
-- `small — medium reasoning`
+- `unlimited: keep max`
+- `large: xhigh reasoning`
+- `medium: high reasoning`
+- `small: medium reasoning`
 
-**(b) Apply it.** Build the working table from the skill defaults, and on a re-run keep any role you changed by family, list, or alias (`inherit-parent`, `auto`). `unlimited` leaves every effort as in that table. `large`, `medium`, and `small` set the effort token of every real slug, panel entries included, to `xhigh`, `high`, or `medium`. The effort token is the last token, or the one before a trailing `fast`, on the ladder `max` > `xhigh` > `high` > `medium` > `low`. If the result is not a detected slug, use the same family's detected slug with the highest effort at or below the target, else mark the role as needing a choice. `inherit-parent` and `auto` do not change. So `small` turns `claude-opus-5-5-max` into `claude-opus-5-5-medium`, and `grok-4.7-xhigh-fast` into `grok-4.7-medium-fast`.
+**(b) Apply it.** Start from the current state. `unlimited` leaves every effort as it is. `large`, `medium` and `small` set the effort of every entry, panel entries included, to `xhigh`, `high` or `medium`. When a model does not support that effort, use its highest supported effort at or below the target from step 1.
 
-**(c) Show the roles and confirm.** Show every role with its model, marking any real slug not in the detected set as needing a choice. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent chat model, which is how Auto users stay on Auto) as the options. Prefer AskQuestion over free text. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the count. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
+**(c) Show the roles and confirm.** Show every role with its `provider / model @effort`, marking any entry not in the detected catalog as needing a choice. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected `provider / model` pairs. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a comma-separated list, and one child thread runs per entry, so the list length sets the count. `arena cross-judge pool` is also a list, but the arena takes the first entry whose model family differs from the parent thread's. Offer at least one entry from a second family when the catalog has one. `swarm workers` is the default model for every worker unless a race assigns another model per arm.
 
 ### 4. Validate
 
-Every real slug written must be in the detected set. `inherit-parent` and `auto` always pass. If a chosen real slug is not available, stop and ask again.
+Every entry's provider must be in `bb provider list`, its model in that provider's catalog, and its effort in that model's `supportedReasoningEfforts`. If one fails, stop and ask again.
 
-### 5. Write the rule
+### 5. Write the setting
 
-Write `~/.cursor/rules/pstack-models.mdc` with `alwaysApply: true`, a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels poteto-mode uses. Overwrite the whole file so re-runs stay idempotent. Shape:
+Write the whole value in one call so re-runs stay idempotent. Put it in a file first, since it is multi-line:
 
 ```
----
-description: pstack per-role model choices (overrides skill defaults)
-alwaysApply: true
----
-# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
-# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
-# budget: unlimited (max)
-feature, refactoring: grok-4.7-xhigh-fast
-bug-fix: grok-4.7-xhigh-fast
-perf-issue: grok-4.7-xhigh-fast
-hillclimb: grok-4.7-xhigh-fast
-judgment and prose: claude-opus-5-5-max
-hardest tasks: claude-opus-5-5-max
-how explorer: grok-4.7-xhigh-fast
-how explainer: claude-opus-5-5-max
-why investigators: grok-4.7-xhigh-fast
-why synthesizer: claude-opus-5-5-max
-reflect tooling: gpt-5.6-sol-max
-reflect judgment, divergent, synthesizer: claude-opus-5-5-max
-arena runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
-arena cross-judge pool: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
-swarm workers: grok-4.7-xhigh-fast
-architect runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
-interrogate reviewers: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast
+bb plugin config pstack set models "$(cat "$BB_THREAD_STORAGE/pstack-models.txt")"
 ```
+
+One line per role, using the same role names poteto-mode uses, in this shape:
+
+```
+# budget: large (xhigh)
+feature, refactoring: claude-code / claude-opus-5-5 @xhigh
+bug-fix: claude-code / claude-fable-5-1 @xhigh
+perf-issue: claude-code / claude-fable-5-1 @xhigh
+hillclimb: claude-code / claude-fable-5-1 @xhigh
+judgment and prose: claude-code / claude-opus-5-5 @xhigh
+hardest tasks: claude-code / claude-fable-5-1 @xhigh
+how explorer: codex / gpt-6-luna @high
+how explainer: claude-code / claude-opus-5-5 @xhigh
+why investigators: codex / gpt-6-luna @high
+why synthesizer: claude-code / claude-opus-5-5 @xhigh
+reflect tooling: claude-code / claude-opus-5-5 @xhigh
+reflect judgment, divergent, synthesizer: claude-code / claude-fable-5-1 @xhigh
+arena runners: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh
+arena cross-judge pool: codex / gpt-6-astra @xhigh, claude-code / claude-fable-5-1 @xhigh
+swarm workers: claude-code / claude-opus-5-5 @high
+architect runners: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh
+interrogate reviewers: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh
+```
+
+Read it back with `bb plugin config pstack --json` and confirm the value matches the file.
 
 ### 6. Confirm
 
-Tell the user the rule was written and that it applies to new sessions. Re-running this skill updates it.
+Tell the user the setting was written. BB builds a thread's instructions when its provider session starts, so the new mapping applies to new threads, not to threads already running. Re-running this skill updates it. `bb plugin config pstack unset models` returns to the plugin default.
 
 ### 7. Offer a verification skill (optional)
 
-Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with /create-verification-skill." On yes, invoke `/create-verification-skill` (resolves wherever pstack is installed: workspace, user, or plugin). On no, move on without pushing.
+Check whether the project has a way to drive the real app for proof (a verification skill under `.bb/skills/`, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with /create-verification-skill." On yes, invoke `/create-verification-skill`. On no, move on without pushing.
