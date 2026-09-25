@@ -30,7 +30,7 @@ Skip Phase A only when the work is genuinely greenfield with no surrounding syst
 
 Run the **pstack-arena** skill with the design-sketch task and the Phase A grounding artifacts. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`.
 
-Spawn one runner per entry of your architect runners line, in place of the arena runners line. Rejected entries follow the runner rules in the **pstack-arena** skill's Phase A. Every runner writes a sketch into the repo, so each gets its own worktree.
+Spawn one runner per entry of your architect runners line, in place of the arena runners line. Each runner's environment and baseline follow the **pstack-arena** skill's Phase A, and a rejected model follows its Phase B.
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. This is the **exhaust-the-design-space** principle skill made concrete. Whole-shape alternatives, not point fixes inside one shape.
 
