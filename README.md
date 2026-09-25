@@ -1,57 +1,40 @@
 # pstack for bb
 
-pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin brings it to bb as 47 skills, each one a slash command available in every thread.
+pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin ships it to bb as 47 skills, adapted so every delegation runs as a bb child thread on the model you picked for that role.
 
-## install
+## Install
 
 ```bash
-bb plugin install git:https://github.com/wy3z/bb-plugin-pstack
+bb plugin install git:https://github.com/mariusflorescu/bb-plugin-pstack
 ```
 
-Then open Settings, then Plugins, then pstack. That page has a master switch and one switch per skill, so you can keep the set to the handful you actually use.
+Settings, then Plugins, then pstack has a master switch and one switch per skill.
 
 Requires bb 0.43 or newer.
 
-## get started
+## Get started
 
-1. Run `/setup-pstack`. It lists the providers this host can reach with `bb provider models`, then asks which model each pstack role should use. bb keeps one provider and model per project and applies a choice per spawn, so the mapping is intent you pass along with `--provider` and `--model` when a worker starts.
-2. Use `/poteto-mode` for anything that needs rigor. It reads your request, picks one of 23 playbooks, and runs the other skills as the steps need them.
+1. Run `/setup-pstack`. It reads the providers and models this host offers (`bb provider models`) and writes the plugin's `models` setting: one `role: provider / model @effort` line per pstack role.
+2. Use `/poteto-mode` for anything that needs rigor. It picks one of 23 playbooks and runs the other skills as the steps need them.
 
-## the skills
+## How it works on bb
 
-The playbooks cover most of the work. The rest of the library is what they reach for:
+The plugin injects the pstack delegation rules into every thread. They say that an explorer, reviewer, runner, worker or judge is a bb child thread (`bb thread spawn --parent-self`) with the provider, model and effort of its role, and that the provider's built-in subagent tool (Claude Code's Agent or Explore, Codex subagents) is never used for a pstack role. A panel role spawns one child per entry, so `/interrogate` can put Claude and GPT reviewers on the same diff. Children report back to the parent thread.
 
-- understanding: `/how`, `/why`, `/teach`, `/recall`, `/figure-it-out`
-- design and review: `/architect`, `/interrogate`, `/pstack-arena`, `/pstack-blast-radius`, `/swarm`
-- proof: `/create-verification-skill`, `/maintain-verification-skill`, `/pstack-tdd`
-- prose and cleanup: `/unslop`, `/technical-writing`, `/no-comments`
-- steering: 23 `principle-*` skills you can name by hand to redirect an agent mid-task
+[BB-NATIVE.md](./BB-NATIVE.md) is the contract that maps every Cursor mechanism upstream uses to its bb equivalent. `node scripts/check-bb-native.mjs` enforces it.
 
-Most of these are user-invoked on purpose. They carry `disable-model-invocation`, so they stay out of the model prompt until you type the name. The model gets the context when you ask for it, not before.
+Three skills carry a `pstack-` prefix to avoid clashing with common personal skills: `/pstack-arena`, `/pstack-tdd` and `/pstack-blast-radius`.
 
-## credit
+## Staying current with upstream
 
-Adapted from [cursor/plugins pstack](https://github.com/cursor/plugins/tree/main/pstack) by [Lauren Tan](https://x.com/poteto), MIT, Copyright (c) 2026 Lauren Tan. The author's own README is kept verbatim in [UPSTREAM-README.md](./UPSTREAM-README.md), and [docs/guide/](./docs/guide/README.md) follows the guide he wrote.
+A daily bb automation runs the project skill `.bb/skills/sync-upstream`. It 3-way merges upstream `pstack/` changes onto this repo (`scripts/sync-upstream.mjs`), translates anything Cursor-native per the contract, and opens one PR. It never merges. `UPSTREAM` holds the pinned upstream commit.
 
-This plugin is an adaptation and is not affiliated with Cursor or with the pstack author.
+## Credit
 
-## what changed from upstream
+Adapted from [cursor/plugins pstack](https://github.com/cursor/plugins/tree/main/pstack) by [Lauren Tan](https://x.com/poteto), MIT, Copyright (c) 2026 Lauren Tan. The upstream README is kept verbatim in [UPSTREAM-README.md](./UPSTREAM-README.md), and [docs/guide/](./docs/guide/README.md) is upstream's guide adapted to bb. The bb packaging started from [wy3z/bb-plugin-pstack](https://github.com/wy3z/bb-plugin-pstack). [MANIFEST.md](./MANIFEST.md) records the provenance.
 
-The skills used to name Cursor's tools, models, and config paths. They now describe what to look up in whichever harness runs them, and they say so when a harness lacks a capability instead of inventing a substitute.
+This plugin is not affiliated with Cursor or with the pstack author.
 
-bb specifics:
-
-- `/setup-pstack` reads the catalog with `bb provider models`, then applies the choice per spawn. bb remembers one provider and model per project, so the per-role mapping is presented rather than stored.
-- Parallel work uses `bb thread spawn`, then `bb thread wait` and `bb thread output` to drain it. A worker gets its own environment with `--new-environment worktree`.
-- Loops and audit ticks use `bb automation create` instead of sleeping inside a thread.
-- Evidence lookups use `bb memory` and any MCP servers you have connected.
-
-Three skills are renamed to avoid clashing with personal skills installed here: `arena` is `/pstack-arena`, `tdd` is `/pstack-tdd`, and `blast-radius` is `/pstack-blast-radius`. Internal links point at the new names.
-
-The benny automation pack ships as inactive reference files. Nothing is scheduled, and the pack needs a service it does not provide.
-
-Every `SKILL.md` carries a provenance note naming the upstream file and commit it came from. [MANIFEST.md](./MANIFEST.md) records the pinned commit and each adaptation. [CAPABILITIES.md](./CAPABILITIES.md) lists what pstack expects from a host and what this plugin does not provide.
-
-## license
+## License
 
 MIT. [LICENSE](./LICENSE) keeps the upstream copyright notice.
