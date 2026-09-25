@@ -40,16 +40,15 @@
   "files": [
     "server.ts",
     "skills",
-    "agents",
     "docs",
-    "automations",
     "assets",
     "README.md",
     "UPSTREAM-README.md",
     "PLUGIN_OVERVIEW.md",
-    "LICENSE",
+    "BB-NATIVE.md",
     "MANIFEST.md",
-    "CAPABILITIES.md",
+    "UPSTREAM",
+    "LICENSE",
     "!**/*.test.*"
   ]
 }
