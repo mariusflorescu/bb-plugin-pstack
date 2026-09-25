@@ -1,6 +1,6 @@
 ---
 name: sync-upstream
-description: Pull new upstream pstack changes (cursor/plugins, path pstack/) into this BB plugin, translate anything Cursor-native to BB-native, and open one PR. Run daily by a BB automation; also for "sync upstream", "update pstack from cursor".
+description: Pull new upstream pstack changes (cursor/plugins, path pstack/) into this BB plugin, translate anything Cursor-native to BB-native, run a cross-model review and reconcile loop until it has no findings, and open one PR. Run daily by a BB automation; also for "sync upstream", "update pstack from cursor".
 ---
 
 # Sync upstream pstack
@@ -24,8 +24,14 @@ You keep this plugin current with upstream pstack without losing its BB adaptati
 
 6. **Update the manifest.** In `MANIFEST.md`, set the pinned commit to the new SHA and the upstream version to the one in `git show refs/upstream/main:pstack/.cursor-plugin/plugin.json`. `UPSTREAM` was already bumped by the script.
 
-7. **Commit, push, open the PR.** One signed commit, `Sync upstream pstack <old short>..<new short>`, with the upstream commit list in the body. Confirm `git branch --show-current` starts with `sync/upstream-`, then `git push -u origin HEAD`. Write the PR text to `$BB_THREAD_STORAGE/sync-pr.md`: the upstream commits, each conflict and how you resolved it, each Cursor mechanism you translated, and the checker's summary line.
+7. **Review, then reconcile, until there are no findings.** First commit the sync itself, signed: `Sync upstream pstack <old short>..<new short>`, with the upstream commit list in the body. The scope is every file this sync changed: `git diff --name-only main` plus new files. Group it by skill directory, at most six directories per group, with `server.ts`, `BB-NATIVE.md` and `scripts/` in their own group. Then loop, starting at round 1:
+   - **Review.** For each group, spawn one read-only reviewer child per the pstack delegation rules on the first `arena cross-judge pool` entry whose model family differs from yours. Its brief is `references/review-brief.md`, followed by a scope section: `<UPSTREAM_SHA>` is the new pin in `UPSTREAM`, the files in the group, and a "Settled" list of every earlier rejected finding with its evidence. A fresh reviewer every round, never a resumed one. Collect all reports.
+   - **Done?** When every report's first line is `NO FINDINGS`, the loop is closed. Go to step 8.
+   - **Reconcile.** For each report with findings, spawn one fixer child on your `feature, refactoring` model in this environment. Its brief is `references/fix-brief.md` with `<UPSTREAM_SHA>` filled in, then the report. Groups are disjoint, so fixers never edit the same file. Collect them, read every diff yourself, then run `node scripts/check-bb-native.mjs` and `node --test scripts/`. Commit the round, signed: `Reconcile review round <n>`. Add each `rejected` finding and its evidence to the Settled list.
+   - **Cap.** Stop after round 5 even with findings open. List them in the PR under "Open review findings" and say so in your reply.
+
+8. **Push and open the PR.** Confirm `git branch --show-current` starts with `sync/upstream-`, then `git push -u origin HEAD`. Write the PR text to `$BB_THREAD_STORAGE/sync-pr.md`: the upstream commits, each conflict and how you resolved it, each Cursor mechanism you translated, each review round with its finding count and outcome (fixed or rejected, with evidence), and the checker's summary line.
    - No open sync PR: `GH_TOKEN=$(gh auth token -u mariusflorescu) gh pr create --repo mariusflorescu/bb-plugin-pstack --base main --title "Sync upstream pstack <old short>..<new short>" --body-file "$BB_THREAD_STORAGE/sync-pr.md"`.
    - Continuing the open PR from step 1: the push already updated it. Comment on it with `GH_TOKEN=$(gh auth token -u mariusflorescu) gh pr comment <number> --repo mariusflorescu/bb-plugin-pstack --body-file "$BB_THREAD_STORAGE/sync-pr.md"`.
 
-**Reply:** the status line, the PR link as `https://github.com/mariusflorescu/bb-plugin-pstack/pull/<number>`, and anything you could not translate with confidence.
+**Reply:** the status line, the review rounds and whether the loop closed with no findings, the PR link as `https://github.com/mariusflorescu/bb-plugin-pstack/pull/<number>`, and anything you could not translate with confidence.
