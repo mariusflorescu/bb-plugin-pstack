@@ -25,20 +25,28 @@ The N candidates will receive the same prompt, so the prompt is the contract.
 
 1. State the artifact each candidate is producing.
 2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria. The rubric is the picker's tool in Phase D. Candidates only see the task.
-3. Pick the runners. Use the `arena runners` line in `~/.cursor/rules/pstack-models.mdc`. If the rule or that line is missing, default to one each on `claude-opus-5-5-max`, `gpt-5.6-sol-max`, `grok-4.7-xhigh-fast`. An `auto` or `inherit-parent` entry in this line or the cross-judge line means the parent model, so omit `model` for it. If the Task tool rejects a configured entry, run that seat on its family's default and say so. Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`. With no family match, use `claude-opus-5-5-max`. If it rejects a default, use the closest valid slug of the same family from its error message. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.
-4. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `/tmp/arena-<slug>/candidate-<n>/`), per the **separate-before-serializing-shared-state** principle skill.
+3. Pick the runners. Take one runner per entry of your arena runners line, spawned per the pstack delegation rules. If `bb thread spawn` rejects an entry's model, pick the closest model of the same family from `bb provider models <provider>`, run that seat on it, and say so. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.
+4. Assign output paths. Each candidate writes to its own location per the **separate-before-serializing-shared-state** principle skill. Spawn a candidate that writes into the repo with `--new-environment worktree` and have it commit on its worktree branch. Otherwise give it its own directory `$BB_THREAD_STORAGE/arena-<slug>/candidate-<n>/`, expanded to an absolute path in its brief, because a child's `$BB_THREAD_STORAGE` is its own.
 
 ## Phase B: Fan out
 
-Spawn all N subagents in one message with `run_in_background: true`, each with the task, the path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.
+Spawn all N candidates before waiting on any, each titled `arena runner <n>: <slug>`. Write each brief to `$BB_THREAD_STORAGE/arena-<slug>/brief-<n>.md` and pass it with `--prompt-file`. Each brief holds the task, the absolute path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.
 
 Each rationale names the alternatives the candidate considered and what it rejected.
 
-If a candidate fails to produce output, proceed with N-1 and note the dropout in the synthesis record.
+Collect every candidate with one background command:
+
+```sh
+for id in <candidate ids>; do
+  bb thread wait "$id" --timeout 2h && bb thread output "$id"
+done
+```
+
+A worktree candidate's files live at `.environment.path` in `bb thread show <id> --json`, on the branch `.environment.branchName`. A candidate that fails never reaches idle, so its wait times out. If a candidate fails to produce output, proceed with N-1 and note the dropout in the synthesis record.
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, choose one model from the `arena cross-judge pool` line in `~/.cursor/rules/pstack-models.mdc`. If the rule or that line is missing, choose from `claude-opus-5-5-max`, `gpt-5.6-sol-max`, `grok-4.7-xhigh-fast`. Prefer a different model family from the parent's. Spawn one readonly judge subagent on that model. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
+After all Phase B candidates complete, spawn one judge per the pstack delegation rules on the first entry of your arena cross-judge pool whose model family differs from yours, titled `arena judge: <slug>`. It shares your environment, and its brief says it is read-only and must not edit files, commit or push. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Collect it with a background `bb thread wait` then `bb thread output` while you read. Don't spawn the judge while candidates are still writing.
 
 ## Phase D: Pick a base
 
@@ -54,7 +62,7 @@ Record the pick and the reason in a short synthesis note alongside the base arti
 
 Walk each losing candidate once more and identify what is worth porting into the base. The signal is usually one or two things per candidate, not most of it.
 
-Fold each graft in by hand, per the **redesign-from-first-principles** principle skill. Don't paste mechanically. The result has to remain coherent under one mental model.
+When the base is a worktree candidate, bring its branch into your environment with `git merge` or `git cherry-pick` and graft there. Fold each graft in by hand, per the **redesign-from-first-principles** principle skill. Don't paste mechanically. The result has to remain coherent under one mental model.
 
 Record what was grafted, from which candidate, and what was rejected and why.
 
