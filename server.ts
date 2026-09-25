@@ -115,6 +115,46 @@ const SKILL_SUMMARIES: Record<SkillName, string> = {
   "why": "Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds.",
 };
 
+// Default role mapping, used until /setup-pstack writes the `models` setting.
+const DEFAULT_MODELS = `feature, refactoring: claude-code / claude-opus-5-5 @xhigh
+bug-fix: claude-code / claude-fable-5-1 @xhigh
+perf-issue: claude-code / claude-fable-5-1 @xhigh
+hillclimb: claude-code / claude-fable-5-1 @xhigh
+judgment and prose: claude-code / claude-opus-5-5 @xhigh
+hardest tasks: claude-code / claude-fable-5-1 @xhigh
+how explorer: codex / gpt-6-luna @high
+how explainer: claude-code / claude-opus-5-5 @xhigh
+why investigators: codex / gpt-6-luna @high
+why synthesizer: claude-code / claude-opus-5-5 @xhigh
+reflect tooling: claude-code / claude-opus-5-5 @xhigh
+reflect judgment, divergent, synthesizer: claude-code / claude-fable-5-1 @xhigh
+swarm workers: claude-code / claude-opus-5-5 @high
+arena runners: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh
+arena cross-judge pool: codex / gpt-6-astra @xhigh, claude-code / claude-fable-5-1 @xhigh
+architect runners: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh
+interrogate reviewers: claude-code / claude-opus-5-5 @xhigh, claude-code / claude-fable-5-1 @xhigh, codex / gpt-6-astra @xhigh, codex / gpt-6-sol @xhigh`;
+
+// Provider-native subagent tools that must not stand in for a pstack role.
+const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
+  "claude-code": "the Agent / Explore / Task tool",
+  codex: "Codex's built-in subagents",
+};
+
+// The block every thread receives. BB truncates instructions at 4096 chars.
+function delegationRules(providerId: string, model: string, models: string): string {
+  const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
+  return `## pstack delegation rules
+
+You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
+
+bb thread spawn --parent-self --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
+
+Take provider, model and effort from the role's line below. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. Children report back to this thread; collect results with bb thread wait <id> then bb thread output <id>. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours. A read-only role says so in its brief. An isolated workspace is --new-environment worktree.
+
+Role models (provider / model @effort):
+${models}`;
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const descriptors: Record<string, PluginSettingDescriptor> = {
     skills: {
@@ -134,17 +174,31 @@ export default async function plugin(bb: BbPluginApi) {
     };
   }
 
+  descriptors.models = {
+    type: "string",
+    label: "Role models",
+    description:
+      "One `role: provider / model @effort` line per pstack role; panel roles take a comma-separated list. Written by /setup-pstack. Injected into every thread as the pstack delegation rules.",
+    experimental_multiline: true,
+    default: DEFAULT_MODELS,
+  };
+
   const settings = bb.settings.define(descriptors);
   let current = await settings.get();
   settings.onChange((next) => {
     current = next;
   });
 
-  bb.agents.configure(() => {
+  bb.agents.configure((context) => {
     if (current.skills !== true) return { tools: [], skills: [] };
+    const models =
+      typeof current.models === "string" && current.models.trim() !== ""
+        ? current.models.trim()
+        : DEFAULT_MODELS;
     return {
       tools: [],
       skills: SKILL_NAMES.filter((name) => current[name] === true),
+      instructions: delegationRules(context.provider.id, context.provider.model, models),
     };
   });
 
