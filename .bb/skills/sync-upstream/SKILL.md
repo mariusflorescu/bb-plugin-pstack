@@ -19,7 +19,7 @@ You keep this plugin current with upstream pstack without losing its BB adaptati
 
 4. **Translate what came in.** Read the whole upstream diff for the new range, not only the conflicts. Every Cursor mechanism in the incoming lines becomes its BB mechanism per `BB-NATIVE.md`. Then run `node scripts/check-bb-native.mjs` and fix every finding. If upstream introduced a Cursor mechanism the contract does not cover, add a row to `BB-NATIVE.md` and a rule to `scripts/check-bb-native.mjs` in the same PR, then apply it.
 
-5. **Keep the plugin whole.** A new or removed skill directory needs `SKILL_NAMES` and `SKILL_SUMMARIES` in `server.ts` updated (the checker flags a mismatch). A new skill whose name collides with a skill in `~/.claude/skills`, `~/.agents/skills` or `~/.bb/skills` gets a `pstack-` alias: add it to `ALIASED` in `scripts/sync-upstream.mjs` and to the aliases table in `MANIFEST.md`. Typecheck with `npm ci --ignore-scripts && npx tsc --noEmit --skipLibCheck`.
+5. **Keep the plugin whole.** Run `node scripts/sync-server-skills.mjs` so `SKILL_NAMES` and `SKILL_SUMMARIES` in `server.ts` match the skill directories and descriptions (the checker flags a mismatch). A new skill whose name collides with a skill in `~/.claude/skills`, `~/.agents/skills` or `~/.bb/skills` gets a `pstack-` alias: add it to `ALIASED` in `scripts/sync-upstream.mjs` and to the aliases table in `MANIFEST.md`. Typecheck with `npm ci --ignore-scripts && npx tsc --noEmit --skipLibCheck`.
 
 6. **Update the manifest.** In `MANIFEST.md`, set the pinned commit to the new SHA and the upstream version to the one in `git show refs/upstream/main:pstack/.cursor-plugin/plugin.json`. `UPSTREAM` was already bumped by the script.
 
