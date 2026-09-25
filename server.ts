@@ -74,7 +74,7 @@ const SKILL_SUMMARIES: Record<SkillName, string> = {
   "how": "Use for \"how does X work\", code walkthroughs before changing something, and placement / ownership / layering questions (\"where should this live\", \"...",
   "interrogate": "Use for \"interrogate\", \"adversarial review\", \"multi-model review\", \"challenge this\", \"stress test this code\", \"find blind spots\", or \"tear this apa...",
   "maintain-verification-skill": "Periodic pass that keeps a project's verification skill and feature map honest: parallel source readers per feature, one live session driving every...",
-  "make-bot-ui": ">-",
+  "make-bot-ui": "Use when building a custom UI (page, dashboard, buttons) that should wake an agent over a webhook, when the sender runs on another machine and need...",
   "no-comments": "Spawn Comment Sicko, fix accepted findings, and offer encodings for claimed constraints.",
   "poteto-mode": "poteto's agent style for concise, detailed responses, deliberate subagents, unslopped prose, simple code, and verified work.",
   "principle-attack-the-premise": "Apply when two or more fixes that share one premise have failed the same gate.",
@@ -115,7 +115,8 @@ const SKILL_SUMMARIES: Record<SkillName, string> = {
   "why": "Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds.",
 };
 
-// Default role mapping, used until /setup-pstack writes the `models` setting.
+// Default role mapping. The `models` setting overrides it one role at a time:
+// a role the setting leaves out keeps its line here.
 const DEFAULT_MODELS = `feature, refactoring: claude-code / claude-opus-5-5 @xhigh
 bug-fix: claude-code / claude-fable-5-1 @xhigh
 perf-issue: claude-code / claude-fable-5-1 @xhigh
@@ -140,8 +141,29 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
   codex: "Codex's built-in subagents",
 };
 
-// The block every thread receives. BB truncates instructions at 4096 chars.
-function delegationRules(providerId: string, model: string, models: string): string {
+// A role whose entry is this runs on the parent thread's own provider and model.
+const INHERIT_PARENT = "inherit-parent";
+
+// BB truncates a plugin's instructions past this many characters.
+const INSTRUCTIONS_LIMIT = 4096;
+
+function parseModels(text: string): Map<string, string[]> {
+  const roles = new Map<string, string[]>();
+  for (const line of text.split("\n")) {
+    const match = line.trim().match(/^([^#:][^:]*):\s*(\S.*)$/);
+    if (match) roles.set(match[1].trim(), match[2].split(",").map((entry) => entry.trim()));
+  }
+  return roles;
+}
+
+function roleModels(setting: string, parent: string): string {
+  const roles = new Map([...parseModels(DEFAULT_MODELS), ...parseModels(setting)]);
+  return [...roles]
+    .map(([role, entries]) => `${role}: ${entries.map((entry) => (entry === INHERIT_PARENT ? parent : entry)).join(", ")}`)
+    .join("\n");
+}
+
+function rules(providerId: string, model: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   return `## pstack delegation rules
 
@@ -149,16 +171,29 @@ You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, s
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Take provider, model and effort from the role's line below. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree instead of --environment. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
+Take provider, model and effort from the role's line below; an entry without @effort omits --reasoning-level. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment. Commit what it needs before spawning it, because uncommitted changes do not reach a worktree. A worktree child on another machine (--machine) cannot see your local commits: push first and pass --base-branch origin/<your branch>. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
 
 for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
 
+A child that fails is in status error, and bb thread wait exits at once with an unreachable error instead of timing out. Read why with bb thread log <id> --format minimal. If its model or effort was rejected, pick a same-family model and a listed effort from bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json, respawn that seat with the same brief, and say so in your report. Any other failure is a dropout.
+
 Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours.
 
-pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it.
+pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 
-Role models (provider / model @effort):
-${models}`;
+${roleSection}`;
+}
+
+// The block every thread receives. A mapping too long to fit whole is replaced
+// by where to read it, so BB's truncation never cuts an entry in half.
+function delegationRules(providerId: string, model: string, setting: string): string {
+  const inline = rules(providerId, model, `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`);
+  if (inline.length <= INSTRUCTIONS_LIMIT) return inline;
+  return rules(
+    providerId,
+    model,
+    `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`
+  );
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -184,7 +219,7 @@ export default async function plugin(bb: BbPluginApi) {
     type: "string",
     label: "Role models",
     description:
-      "One `role: provider / model @effort` line per pstack role; panel roles take a comma-separated list. Written by /setup-pstack. Injected into every thread as the pstack delegation rules.",
+      "One `role: provider / model @effort` line per pstack role; panel roles take a comma-separated list. A role left out keeps its default, and `inherit-parent` runs the role on the parent thread's own provider and model. Written by /setup-pstack. Injected into every thread as the pstack delegation rules.",
     experimental_multiline: true,
     default: DEFAULT_MODELS,
   };
@@ -197,14 +232,14 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.configure((context) => {
     if (current.skills !== true) return { tools: [], skills: [] };
-    const models =
-      typeof current.models === "string" && current.models.trim() !== ""
-        ? current.models.trim()
-        : DEFAULT_MODELS;
     return {
       tools: [],
       skills: SKILL_NAMES.filter((name) => current[name] === true),
-      instructions: delegationRules(context.provider.id, context.provider.model, models),
+      instructions: delegationRules(
+        context.provider.id,
+        context.provider.model,
+        typeof current.models === "string" ? current.models : ""
+      ),
     };
   });
 

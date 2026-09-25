@@ -5,17 +5,27 @@
 //   node scripts/sync-upstream.mjs            sync to upstream main
 //   node scripts/sync-upstream.mjs --to <sha> sync to a specific upstream commit
 // Prints one status line first: "up-to-date", "applied" or "conflicts".
-// Exit 0 for up-to-date/applied, 2 for conflicts, 1 for errors.
+// Exit 0 for up-to-date/applied, 2 for conflicts, 1 for errors. Every change is
+// read and merged before anything is written, so an error leaves the tree and
+// the pin untouched.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, lstatSync, readlinkSync, symlinkSync, chmodSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 const ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
 const PIN_FILE = join(ROOT, "UPSTREAM");
 const ALIASED = ["arena", "tdd", "blast-radius"];
+const MAX_BUFFER = 256 * 1024 * 1024;
 
-const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).trim();
+const ABSENT = "000000";
+const REGULAR = "100644";
+const EXECUTABLE = "100755";
+const SYMLINK = "120000";
+const SUPPORTED = new Set([REGULAR, EXECUTABLE, SYMLINK]);
+
+const gitBuffer = (...args) => execFileSync("git", args, { cwd: ROOT, maxBuffer: MAX_BUFFER });
+const git = (...args) => gitBuffer(...args).toString("utf8").trim();
 
 function readPin() {
   const fields = Object.fromEntries(
@@ -57,44 +67,94 @@ function alias(text) {
 
 const isText = (path) => /\.(md|ts|mjs|sh|json|txt|lock)$/.test(path) || !/\.[a-z0-9]+$/i.test(path);
 
-function upstreamBlob(sha, path) {
-  try {
-    return execFileSync("git", ["show", `${sha}:${path}`], { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 });
-  } catch {
-    return null;
-  }
+// One side of a three-way merge: { mode, content } or null when the file does
+// not exist on that side. A symlink's content is its target.
+function upstreamSide(mode, sha, upstreamPath, text) {
+  if (mode === ABSENT) return null;
+  if (!SUPPORTED.has(mode)) throw new Error(`${upstreamPath}: unsupported upstream mode ${mode}`);
+  const blob = gitBuffer("cat-file", "blob", sha);
+  return { mode, content: text ? Buffer.from(alias(blob.toString("utf8"))) : blob };
 }
 
-// Three-way merge of one upstream file onto ours. Base and theirs get the
-// aliases first, so alias renames never show up as conflicts.
-function mergeFile(ours, baseBuf, theirsBuf, scratch) {
-  const abs = join(ROOT, ours);
-  const text = isText(ours);
-  const base = baseBuf && text ? alias(baseBuf.toString("utf8")) : baseBuf;
-  const theirs = theirsBuf && text ? alias(theirsBuf.toString("utf8")) : theirsBuf;
-  const mine = existsSync(abs) ? readFileSync(abs) : null;
-  const same = (x, y) => x !== null && y !== null && Buffer.compare(Buffer.from(x), Buffer.from(y)) === 0;
+function localSide(abs) {
+  let stat;
+  try {
+    stat = lstatSync(abs);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return { mode: SYMLINK, content: Buffer.from(readlinkSync(abs)) };
+  return { mode: stat.mode & 0o111 ? EXECUTABLE : REGULAR, content: readFileSync(abs) };
+}
 
+// Changed paths under the upstream prefix with both sides' modes and blobs,
+// from git's own metadata: a side is absent only when git says so.
+function upstreamChanges(from, to, prefix) {
+  const fields = gitBuffer("diff", "--raw", "-z", "--no-renames", "--no-abbrev", from, to, "--", prefix + "/")
+    .toString("utf8")
+    .split("\0");
+  const changes = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [baseMode, theirsMode, baseSha, theirsSha] = fields[i].slice(1).split(" ");
+    changes.push({ path: fields[i + 1], baseMode, theirsMode, baseSha, theirsSha });
+  }
+  return changes;
+}
+
+const same = (x, y) => x === y || (x !== null && y !== null && x.mode === y.mode && x.content.equals(y.content));
+const conflict = (reason, result) => ({ outcome: "conflict", reason, result });
+
+function mergeMode(base, mine, theirs) {
+  if (mine === theirs || theirs === base) return mine;
+  if (mine === base) return theirs;
+  return null;
+}
+
+// Decide one file. Returns the outcome and the side to write: null deletes the
+// file, undefined leaves it as it is. Writes nothing.
+function mergeFile(ours, base, mine, theirs, scratch) {
   if (theirs === null) {
-    if (mine === null) return "unchanged";
-    if (same(mine, base)) {
-      rmSync(abs);
-      return "deleted";
-    }
-    return "conflict";
+    if (mine === null) return { outcome: "unchanged" };
+    if (same(mine, base)) return { outcome: "deleted", result: null };
+    return conflict("changed here, deleted upstream");
   }
-  if (mine === null || same(mine, base) || !text) {
-    if (mine !== null && !text && !same(mine, base) && !same(mine, theirs)) return "conflict";
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, theirs);
-    return mine === null ? "added" : "updated";
+  if (mine === null) {
+    if (base === null) return { outcome: "added", result: theirs };
+    return conflict("deleted here, changed upstream");
   }
+  if (same(mine, base)) return { outcome: "updated", result: theirs };
+
+  const mode = mergeMode(base?.mode ?? null, mine.mode, theirs.mode);
+  if (mode === null) return conflict("mode changed on both sides");
+  const textual = isText(ours) && ![base, mine, theirs].some((side) => side?.mode === SYMLINK);
+  if (!textual) {
+    if (mine.content.equals(theirs.content) || (base && theirs.content.equals(base.content))) return { outcome: "merged", result: { mode, content: mine.content } };
+    if (base && mine.content.equals(base.content)) return { outcome: "merged", result: { mode, content: theirs.content } };
+    return conflict("binary or symlink changed on both sides, left as ours");
+  }
+
   const basePath = join(scratch, "base");
   const theirsPath = join(scratch, "theirs");
-  writeFileSync(basePath, base ?? "");
-  writeFileSync(theirsPath, theirs);
-  const result = spawnSync("git", ["merge-file", "-L", "ours", "-L", "upstream-base", "-L", "upstream", abs, basePath, theirsPath], { cwd: ROOT });
-  return result.status === 0 ? "merged" : "conflict";
+  writeFileSync(basePath, base?.content ?? "");
+  writeFileSync(theirsPath, theirs.content);
+  const merged = spawnSync("git", ["merge-file", "-p", "-L", "ours", "-L", "upstream-base", "-L", "upstream", join(ROOT, ours), basePath, theirsPath], { cwd: ROOT, maxBuffer: MAX_BUFFER });
+  if (merged.error) throw merged.error;
+  if (merged.status === null || merged.status > 127) throw new Error(`git merge-file failed on ${ours}: ${merged.stderr}`);
+  const result = { mode, content: merged.stdout };
+  return merged.status === 0 ? { outcome: "merged", result } : conflict("edited on both sides, conflict markers in the file", result);
+}
+
+function write(abs, side) {
+  rmSync(abs, { force: true });
+  if (side === null) return;
+  mkdirSync(dirname(abs), { recursive: true });
+  if (side.mode === SYMLINK) {
+    symlinkSync(side.content.toString("utf8"), abs);
+    return;
+  }
+  writeFileSync(abs, side.content);
+  chmodSync(abs, side.mode === EXECUTABLE ? 0o755 : 0o644);
 }
 
 function main() {
@@ -112,24 +172,29 @@ function main() {
   }
 
   const scratch = mkdtempSync(join(tmpdir(), "pstack-sync-"));
-  const changed = git("diff", "--name-only", "--no-renames", pin.sha, to, "--", pin.path + "/").split("\n").filter(Boolean);
-  const results = { conflict: [], dropped: [] };
-  const lines = [];
-  for (const upstreamPath of changed) {
-    const ours = mapPath(upstreamPath, pin.path);
-    if (ours === null) {
-      results.dropped.push(upstreamPath);
-      continue;
+  const plan = [];
+  const dropped = [];
+  try {
+    for (const change of upstreamChanges(pin.sha, to, pin.path)) {
+      const ours = mapPath(change.path, pin.path);
+      if (ours === null) {
+        dropped.push(change.path);
+        continue;
+      }
+      const text = isText(ours);
+      const base = upstreamSide(change.baseMode, change.baseSha, change.path, text);
+      const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, text);
+      plan.push({ ours, ...mergeFile(ours, base, localSide(join(ROOT, ours)), theirs, scratch) });
     }
-    const outcome = mergeFile(ours, upstreamBlob(pin.sha, upstreamPath), upstreamBlob(to, upstreamPath), scratch);
-    lines.push(`${outcome.padEnd(9)} ${ours}`);
-    if (outcome === "conflict") results.conflict.push(ours);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
-  const conflicts = results.conflict;
-  const dropped = results.dropped;
 
+  for (const { ours, result } of plan) if (result !== undefined) write(join(ROOT, ours), result);
   writeFileSync(PIN_FILE, `repo=${pin.repo}\npath=${pin.path}\nsha=${to}\n`);
 
+  const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} (${file.reason})`);
+  const lines = plan.map((file) => `${file.outcome.padEnd(9)} ${file.ours}${file.reason ? ` (${file.reason})` : ""}`);
   console.log(`${conflicts.length ? "conflicts" : "applied"}: ${pin.sha.slice(0, 7)}..${to.slice(0, 7)}`);
   console.log(`\nupstream commits:\n${commits}`);
   console.log(`\nfiles:\n${lines.join("\n") || "(none)"}`);

@@ -26,11 +26,38 @@ const RULES = [
   { id: "cursor-rules", re: /\.mdc\b|alwaysApply|always-applied rule/, hint: "bb config is the plugin setting, .bb/AGENTS.md or .bb/skills" },
   { id: "cursor-ui", re: /\bcomposer\b|background agent|\bagent mode\b/i, hint: "name the bb surface (thread, child thread, worktree)" },
   { id: "persona-dir", re: /\.\.\/(\.\.\/)?agents\//, hint: "personas live in the owning skill's references/" },
+  { id: "wait-error", re: /never reach(es|ed)? idle|wait (times|timed) out/i, hint: "a failed child is in status error and bb thread wait exits at once; read bb thread log <id>" },
+  { id: "hidden-children", re: /bb thread list\b(?=.*--parent-thread)(?!.*--include-hidden)/, hint: "add --include-hidden, or hidden children are skipped" },
+  { id: "trunk-read", re: /origin\/main:pstack\//, hint: "re-read pstack from trunk with poteto-mode's scripts/read-from-trunk.sh skills/<path>" },
+  { id: "provider-host", re:/bb provider (list|models)\b(?!.*--(environment|machine|host)\b)/, hint: "pass --environment \"$BB_ENVIRONMENT_ID\" or --machine; without one bb reads the server's machine" },
 ];
 
 const TEXT = new Set([".md", ".sh", ".mjs", ".ts", ".json", ".txt", ""]);
 // Code files may legitimately say "cursor" (pagination) or talk to GitHub bots.
 const CODE_EXEMPT = new Set(["cursor-name", "origin-forge", "task-tool"]);
+
+// A bold name is a skill reference when it carries a pstack prefix or the text
+// calls it a skill ("the **how** skill", "**a** and **b** principle skills").
+// Other bold words (**evidence**) are emphasis.
+const BOLD_NAME = /\*\*([a-z][a-z0-9-]*)\*\*/g;
+const CALLED_A_SKILL = /^\*\*[a-z][a-z0-9-]*\*\*((,|,? and|,? or) \*\*[a-z][a-z0-9-]*\*\*)* (principle )?skills?\b/;
+// Skills BB's own guide plugin ships, which pstack text may name.
+const BB_SKILLS = new Set(["skill-creator"]);
+
+// The lookup the injected delegation rules describe: ../<name>/, or
+// ../principle-<name>/ for a principle named without its prefix.
+const resolvesToSkill = (name) =>
+  BB_SKILLS.has(name) || [name, `principle-${name}`].some((dir) => existsSync(join(SKILLS, dir, "SKILL.md")));
+
+function skillNameFindings(line) {
+  const findings = [];
+  for (const m of line.matchAll(BOLD_NAME)) {
+    const name = m[1];
+    const isReference = /^(principle|pstack)-/.test(name) || CALLED_A_SKILL.test(line.slice(m.index));
+    if (isReference && !resolvesToSkill(name)) findings.push(`[skill-name] **${name}** has no skills/${name}/ or skills/principle-${name}/`);
+  }
+  return findings;
+}
 
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {
@@ -71,6 +98,7 @@ function checkSkill(name) {
         if (!isMarkdown && CODE_EXEMPT.has(rule.id)) continue;
         if (rule.re.test(line)) findings.push(`${rel}:${i + 1} [${rule.id}] ${rule.hint}: ${line.trim().slice(0, 140)}`);
       }
+      if (isMarkdown) for (const finding of skillNameFindings(line)) findings.push(`${rel}:${i + 1} ${finding}`);
     });
     if (!isMarkdown) continue;
     for (const target of relativeTargets(lines.join("\n"))) {

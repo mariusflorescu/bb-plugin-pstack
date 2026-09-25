@@ -18,16 +18,32 @@ function parseDoubleQuoted(raw) {
   }
 }
 
+// A block scalar (`>-`, `|` and the like) keeps its text on the indented lines
+// below the key. Folding every line break to a space is enough for a summary.
+function descriptionValue(frontmatter) {
+  const lines = frontmatter.split("\n");
+  const at = lines.findIndex((line) => line.startsWith("description:"));
+  if (at === -1) return "";
+  const raw = lines[at].slice("description:".length).trim();
+  if (/^[>|][+-]?$/.test(raw)) {
+    const body = [];
+    for (const line of lines.slice(at + 1)) {
+      if (line.trim() !== "" && !/^\s/.test(line)) break;
+      body.push(line.trim());
+    }
+    return body.join(" ").replace(/\s+/g, " ").trim();
+  }
+  return raw.startsWith('"') ? parseDoubleQuoted(raw) : raw.replace(/^'(.*)'$/, "$1").replace(/''/g, "'");
+}
+
 function description(text) {
-  const block = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
-  const raw = block.match(/^description:\s*(.+)$/m)?.[1].trim() ?? "";
-  const unquoted = raw.startsWith('"') ? parseDoubleQuoted(raw) : raw.replace(/^'(.*)'$/, "$1").replace(/''/g, "'");
-  const first = unquoted.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? unquoted;
+  const value = descriptionValue(text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "");
+  const first = value.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? value;
   return first.length > MAX ? first.slice(0, MAX - 3).trimEnd() + "..." : first;
 }
 
 const names = readdirSync(SKILLS)
-  .filter((d) => statSync(join(SKILLS, d)).isDirectory() && existsSync(join(SKILLS, d, "SKILL.md")))
+  .filter((d) => !d.startsWith(".") && statSync(join(SKILLS, d)).isDirectory() && existsSync(join(SKILLS, d, "SKILL.md")))
   .sort();
 
 const list = names.map((n) => `  ${JSON.stringify(n)},`).join("\n");
