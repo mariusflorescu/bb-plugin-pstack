@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Rerunnable check for skills/poteto-mode/scripts/worktree-audit.sh.
-# Builds a scratch repo with six worktrees and a stub `bb`, runs the audit, and
-# asserts each row's ENV, LAST_THREAD flags and BUCKET. Stub paths use the
+# Builds a scratch repo with a dozen worktrees and a stub `bb` and `gh`, runs
+# the audit, and asserts each row's columns by header name. Stub paths use the
 # non-canonical $TMPDIR form while git lists canonical paths, so a pass also
 # proves the path canonicalization.
-# Usage: worktree-audit-test.sh <path to worktree-audit.sh>
+# Usage: worktree-audit.test.sh <path to worktree-audit.sh>
 set -eu
 audit="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 S="${TMPDIR:-/tmp}/wt-audit-test.$$"
-trap 'rm -rf "$S"' EXIT
-mkdir -p "$S/stub"
+trap 'rm -rf "$S" "$S.link"' EXIT
+mkdir -p "$S/stub/logs"
 cd "$S"
 
 git init -q --bare origin.git
@@ -20,51 +20,147 @@ git config user.name t
 echo a > a.txt && git add a.txt && git commit -qm init
 git remote add origin "$S/origin.git" && git push -q origin main
 wt() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && echo "$1" > "$1.txt" && git add . && git commit -qm "$1"); }
+wt_at_main() { git worktree add -q -b "$1" "$S/wt-$1"; }
 wt merged && git merge -q --ff-only merged && git push -q origin main
 for name in wip inuse running child recent; do wt "$name"; done
+for name in hidden parent leaf new byname byslash bytilde kid; do wt_at_main "$name"; done
+git worktree add -q -b spaced "$S/wt-sp ace"
+ln -s "$S" "$S.link"
+git worktree add -q --detach "$S/wt-detached" && (cd "$S/wt-detached" && echo d > d.txt && git add . && git commit -qm detached)
 echo edited >> "$S/wt-wip/a.txt"
+echo edited >> "$S/wt-leaf/a.txt"
+echo 'export const x = 1' > "$S/wt-new/new.ts"
 
 now=$(( $(date +%s) * 1000 )); old=$(( now - 10 * 86400 * 1000 ))
-envrow() { printf '{"id":"env_%s","path":"%s"}' "$1" "$S/wt-$1"; }
-printf '[%s,%s,%s,%s,%s]\n' "$(envrow merged)" "$(envrow inuse)" "$(envrow running)" "$(envrow child)" "$(envrow recent)" > "$S/stub/envs.json"
-cat > "$S/stub/threads.json" <<EOF
-[{"id":"thr_a","environmentId":"env_merged","status":"idle","pinnedAt":null,"parentThreadId":null,"updatedAt":$old},
- {"id":"thr_b","environmentId":"env_inuse","status":"idle","pinnedAt":$old,"parentThreadId":null,"updatedAt":$old},
- {"id":"thr_c","environmentId":"env_running","status":"stopping","pinnedAt":null,"parentThreadId":null,"updatedAt":$old},
- {"id":"thr_d","environmentId":"env_child","status":"idle","pinnedAt":null,"parentThreadId":"thr_b","updatedAt":$old},
- {"id":"thr_e","environmentId":"env_recent","status":"idle","pinnedAt":null,"parentThreadId":null,"updatedAt":$now}]
+envrow() { printf '{"id":"env_%s","projectId":"%s","hostId":"%s","path":"%s"}' "$1" "${3:-proj_here}" "${4:-host_here}" "$2"; }
+{
+	printf '[%s' "$(envrow far "$S/wt-merged" proj_far host_far)"
+	printf ',%s' "$(envrow main "$S/repo")" "$(envrow far2 "$S/elsewhere" proj_far)"
+	for name in merged inuse running child recent hidden parent leaf kid; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
+	printf ']\n'
+} > "$S/stub/envs.json"
+thread() { # id env status pinnedAt parent updatedAt [visibility] [source] [project]
+	printf '{"id":"%s","projectId":"%s","environmentId":"%s","status":"%s","pinnedAt":%s,"parentThreadId":%s,"lifecycleOwnerThreadId":null,"sourceThreadId":%s,"visibility":"%s","archivedAt":null,"queuedWork":"none","updatedAt":%s}' \
+		"$1" "${9:-proj_here}" "$2" "$3" "$4" "$5" "${8:-null}" "${7:-visible}" "$6"
+}
+{
+	printf '[%s' "$(thread thr_self env_main active null null "$now")"
+	printf ',%s' \
+		"$(thread thr_a env_merged idle null null "$old")" \
+		"$(thread thr_a2 env_merged idle null null "$old" hidden '"thr_a"')" \
+		"$(thread thr_far env_far idle "$old" null "$old" visible null proj_far)" \
+		"$(thread thr_b env_inuse idle "$old" null "$old")" \
+		"$(thread thr_c env_running stopping null null "$old")" \
+		"$(thread thr_d env_child idle null '"thr_b"' "$old")" \
+		"$(thread thr_e env_recent idle null null "$now")" \
+		"$(thread thr_h env_hidden active null null "$old" hidden)" \
+		"$(thread thr_p env_parent idle null null "$old")" \
+		"$(thread thr_leaf env_leaf idle null '"thr_mid"' "$old")" \
+		"$(thread thr_kid env_kid idle null '"thr_self"' "$old")" \
+		"$(thread thr_m env_main idle "$old" null "$old")" \
+		"$(thread thr_x env_main active null null "$old")" \
+		"$(thread thr_q env_far2 active null null "$old" visible null proj_far)"
+	printf ']\n'
+} > "$S/stub/threads.json"
+jq -c --argjson t "$old" '.[] | select(.id == "thr_p") | .id = "thr_mid" | .environmentId = "env_gone" | .parentThreadId = "thr_p" | .archivedAt = $t' \
+	"$S/stub/threads.json" | jq -s . > "$S/stub/archived.json"
+jq -n --arg link "cat $S.link/wt-byname/src/x.ts" --arg slash "ls $S//wt-byslash/lib" --arg tilde "cd ~/wt-bytilde && make" \
+	--arg space "open $(cd "$S" && pwd -P)/wt-sp ace/notes.md" \
+	'[$link, $slash, $tilde, $space | {data: {command: .}}]' > "$S/stub/logs/thr_m.json"
+echo "[{\"data\":{\"command\":\"ls $S/wt-merged-copy/\"}}]" > "$S/stub/logs/thr_x.json"
+echo "[{\"data\":{\"command\":\"ls $S/wt-merged/\"}}]" > "$S/stub/logs/thr_q.json"
+echo "[{\"data\":{\"text\":\"$(ls -d "$S"/wt-* | grep -v /wt-merged | tr '\n' ' ')\"}}]" > "$S/stub/logs/thr_self.json"
+
+cat > "$S/stub/gh" <<'EOF'
+#!/usr/bin/env bash
+echo '[]'
 EOF
 cat > "$S/stub/bb" <<EOF
 #!/usr/bin/env bash
 [ -n "\${BB_STUB_FAIL:-}" ] && { echo '{"ok":false,"error":{"code":"down","message":"down"}}'; exit 1; }
-case "\$1 \$2" in
-	"environment list") cat "$S/stub/envs.json" ;;
-	"thread list") cat "$S/stub/threads.json" ;;
+cmd="\$1 \$2"; shift 2
+host=""; archived=""; hidden=""; prev=""
+for a in "\$@"; do
+	case "\$prev" in --host) host="\$a" ;; esac
+	case "\$a" in --archived) archived=1 ;; --include-hidden) hidden=1 ;; esac
+	prev="\$a"
+done
+case "\$cmd" in
+	"environment show") jq -e --arg id "\$1" '.[] | select(.id == \$id)' "$S/stub/envs.json" ;;
+	"environment list") jq --arg h "\$host" '[.[] | select(\$h == "" or .hostId == \$h)]' "$S/stub/envs.json" ;;
+	"thread list") file=threads; [ -n "\$archived" ] && file=archived
+		jq --arg h "\$hidden" '[.[] | select(\$h != "" or .visibility == "visible")]' "$S/stub/\$file.json" ;;
+	"thread log") echo "\$1" >> "$S/stub/logs-read"
+		[ -n "\${BB_STUB_FAIL_LOG:-}" ] && exit 1
+		cat "$S/stub/logs/\$1.json" 2>/dev/null || echo '[]' ;;
 	*) exit 2 ;;
 esac
 EOF
-chmod +x "$S/stub/bb"
+chmod +x "$S/stub/bb" "$S/stub/gh"
 
 fail=0
-check() {
-	local out="$1" name="$2" want="$3"
-	local got
-	got=$(awk -F'\t' -v n="/wt-$name" 'substr($10, length($10) - length(n) + 1) == n { print $7 "|" $9 }' <<<"$out" | sed "s/[0-9-]\{10\}/DATE/")
-	if [ "$got" = "$want" ]; then echo "ok   $name $got"; else echo "FAIL $name got '$got' want '$want'"; fail=1; fi
+field() {
+	awk -F'\t' -v n="/wt-$2" -v c="$3" '$1 == "SIZE" { for (i = 1; i <= NF; i++) if ($i == c) k = i; next }
+		n == "/wt-*" ? index($NF, "/wt-") : substr($NF, length($NF) - length(n) + 1) == n { print (k ? $k : "<no " c " column>") }' <<<"$1"
 }
+check() {
+	local out="$1" name="$2" kv col want got
+	shift 2
+	for kv in "$@"; do
+		col="${kv%%=*}" want="${kv#*=}"
+		got=$(field "$out" "$name" "$col")
+		# shellcheck disable=SC2053
+		if [[ "$got" == $want ]]; then echo "ok   $name $col=$got"; else echo "FAIL $name $col got '$got' want '$want'"; fail=1; fi
+	done
+}
+assert() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
+run() { env PATH="$S/stub:$PATH" HOME="$S" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self "$@" bash "$audit" "$S/repo" 2>&1; }
 
-out=$(PATH="$S/stub:$PATH" bash "$audit" "$S/repo" 2>/dev/null)
-check "$out" wip "-|hold-wip"
-check "$out" merged "env_merged|safe"
-check "$out" inuse "env_inuse|hold-in-use"
-check "$out" running "env_running|hold-in-use"
-check "$out" child "env_child|hold-in-use"
-check "$out" recent "env_recent|verify-recent-chat"
-grep -q $'env_child\tDATE,pinned' <<<"$(sed "s/[0-9-]\{10\}/DATE/" <<<"$out")" && echo "ok   child inherits pinned from its parent" || { echo "FAIL child LAST_THREAD lacks pinned"; fail=1; }
+out=$(run)
+check "$out" wip BUCKET=hold-wip DIRTY=wip:1
+check "$out" merged ENV=env_merged CASCADE=- MENTIONS=- BUCKET=safe
+check "$out" inuse ENV=env_inuse BUCKET=hold-in-use
+check "$out" running BUCKET=hold-in-use
+check "$out" child "LAST_THREAD=*,pinned" BUCKET=hold-in-use
+check "$out" recent BUCKET=verify-recent-chat
+check "$out" hidden BUCKET=hold-in-use
 
-down=$(BB_STUB_FAIL=1 PATH="$S/stub:$PATH" bash "$audit" "$S/repo" 2>&1)
-grep -q '^warn: bb unavailable' <<<"$down" && echo "ok   bb down warns" || { echo "FAIL bb down did not warn"; fail=1; }
-check "$down" inuse "-|review"
+echo "# archiving a clean worktree's threads must not retire another worktree"
+check "$out" parent CASCADE=env_leaf BUCKET=hold-cascade
+check "$out" leaf BUCKET=hold-wip
+
+echo "# untracked files and commits no ref contains are work removal loses"
+check "$out" new DIRTY=untracked:1 BUCKET=hold-wip
+check "$out" detached DIRTY=unreachable BUCKET=hold-wip
+
+echo "# environments come from this machine; logs come from this repo's projects, however a path is spelled"
+check "$out" byname ENV=- MENTIONS=thr_m BUCKET=hold-in-use
+check "$out" byslash MENTIONS=thr_m BUCKET=hold-in-use
+check "$out" bytilde MENTIONS=thr_m BUCKET=hold-in-use
+check "$out" "sp ace" MENTIONS=thr_m BUCKET=hold-in-use
+assert "never reads another project's log" '! grep -qx thr_q "$S/stub/logs-read" 2>/dev/null'
+assert "never reads its own log" '! grep -qx thr_self "$S/stub/logs-read" 2>/dev/null'
+
+echo "# the auditing thread holds the worktree it works in, not its children's"
+check "$out" kid "LAST_THREAD=????-??-??" BUCKET=safe
+check "$(run BB_THREAD_ID=thr_a)" merged "LAST_THREAD=*,running" BUCKET=hold-in-use
+
+echo "# unknown BB state holds every row: bb down, one log unreadable, no BB environment"
+down=$(run BB_STUB_FAIL=1)
+nolog=$(run BB_STUB_FAIL_LOG=1)
+nohost=$(run BB_ENVIRONMENT_ID=)
+assert "bb down warns" 'grep -q "^warn: .*hold-unknown" <<<"$down"'
+for o in "$down" "$nolog" "$nohost"; do
+	check "$o" merged BUCKET=hold-unknown
+	assert "no row is safe" '! field "$o" "*" BUCKET | grep -qx safe'
+done
+
+echo "# a recheck names only the worktrees about to be pruned"
+recheck=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-merged" "$S/wt-parent" 2>&1)
+assert "recheck prints exactly the two named rows" '[ "$(grep -c "/wt-" <<<"$recheck")" = 2 ]'
+check "$recheck" merged BUCKET=safe
+check "$recheck" parent BUCKET=hold-cascade
 
 echo
 echo "$out"

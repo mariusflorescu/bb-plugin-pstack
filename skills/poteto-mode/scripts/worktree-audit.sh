@@ -1,19 +1,62 @@
 #!/usr/bin/env bash
 # Read-only worktree prune audit. Classifies every git worktree by size, merge
-# state, uncommitted work, remote/PR state, and the BB environment and threads
-# on it (newest activity, pinned, running). Emits a table sorted by size with a
-# suggested bucket. Never deletes anything; deletion stays a human-gated step
-# in the playbook.
+# state, work that removal would lose, remote/PR state, and BB usage: the BB
+# environments at its path on this machine, the threads in them or in this
+# repo's projects whose logs name the path, whether any of those or an ancestor
+# is pinned or running, and which other environments archiving its threads
+# would cascade into. Emits a table sorted by size with a suggested bucket.
+# Never deletes anything; deletion stays a human-gated step in the playbook.
+# BB state it cannot read makes every row hold-unknown, never safe.
 #
-# Usage: worktree-audit.sh [repo-path]   (defaults to the current repo)
+# Usage: worktree-audit.sh [repo-path [worktree-path...]]
+#   Defaults to the current repo and all of its worktrees. Name worktrees to
+#   recheck only those right before pruning.
 set -u
 
 repo="${1:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -z "$repo" ] && { echo "not in a git repo; pass a repo path" >&2; exit 1; }
 cd "$repo" || exit 1
+[ $# -gt 0 ] && shift
+
+list_worktrees() { git worktree list --porcelain | awk '/^worktree /{sub(/^worktree /, ""); print}'; }
+canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
+
+# Every absolute path on stdin, resolved through symlinks at its longest
+# existing prefix, so /var and /private/var or a symlinked parent compare equal.
+resolved_paths() {
+	grep -oE '/[A-Za-z0-9._~@%+=/-]+' | sort -u | while read -r tok; do
+		p="$tok"
+		while [ -n "$p" ] && [ ! -d "$p" ]; do p="${p%/*}"; done
+		[ -n "$p" ] && cd -P "$p" 2>/dev/null && printf '%s%s\n' "${PWD%/}" "${tok#"$p"}"
+	done
+}
+
+# The worktrees ($wts) a thread log on stdin names, however the path is spelled.
+# Resolved paths cover symlinks, doubled slashes and ~/, and each worktree's
+# literal forms ($patterns) cover paths with spaces. Fails when a match errors.
+mentioned_worktrees() {
+	local log found="" wt pattern
+	log=$(sed -e "s#~/#${HOME%/}/#g" -e 's#//*#/#g')
+	while IFS=$'\t' read -r wt pattern; do
+		[ -z "$pattern" ] && continue
+		grep -qE "${pattern}([^A-Za-z0-9._-]|\$)" <<<"$log"
+		case $? in 0) found+="$wt"$'\n' ;; 1) ;; *) return 1 ;; esac
+	done <<<"$patterns"
+	found+=$(resolved_paths <<<"$log" | WTS="$wts" awk 'BEGIN { n = split(ENVIRON["WTS"], w, "\n") }
+		{ for (i = 1; i <= n; i++) if (w[i] != "" && ($0 == w[i] || index($0, w[i] "/") == 1)) print w[i] }') || return 1
+	printf '%s\n' "$found" | sed '/^$/d' | sort -u
+}
 
 # Main worktree is the first entry; everything else is a candidate.
-main_wt=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+main_wt=$(list_worktrees | head -1)
+all_wts=$(list_worktrees | tail -n +2)
+wts="$all_wts"
+if [ $# -gt 0 ]; then
+	wts=$(for p in "$@"; do
+		c=$(canonical "$p")
+		grep -qxF "$c" <<<"$all_wts" && echo "$c" || echo "warn: $p is not a worktree of $repo" >&2
+	done)
+fi
 
 # origin/main drives the merge check. Best-effort; stale is fine for a first pass.
 git fetch origin main --quiet 2>/dev/null || echo "warn: could not fetch origin/main; merged column may be stale" >&2
@@ -24,34 +67,92 @@ git fetch origin main --quiet 2>/dev/null || echo "warn: could not fetch origin/
 prs=$(gh pr list --author "@me" --state all --limit 1000 \
 	--json number,state,headRefName 2>/dev/null) || prs="[]"
 
-# One row per BB environment, fetched once: path, env id, newest activity of its
-# unarchived threads, and how many are pinned or running. A thread counts as
-# pinned or running when any ancestor is, since a pinned coordinator's children
-# work in sibling worktrees the user never pinned.
-bbenvs=$(
-	envs=$(bb environment list --json 2>/dev/null) \
-		&& threads=$(bb thread list --include-hidden --json 2>/dev/null) \
-		&& printf '%s\n%s\n' "$envs" "$threads" | jq -rs '
-			def lineage($by): ., ($by[.parentThreadId // ""] // empty | lineage($by));
-			def running: .status | IN("pending", "starting", "active", "stopping");
-			.[1] as $threads | INDEX($threads[]; .id) as $by
-			| .[0][] | .id as $id
-			| [$threads[] | select(.environmentId == $id)] as $t
-			| [.path, $id, ((($t | map(.updatedAt) | max) // 0) / 1000 | floor),
-			   ($t | map(select(any(lineage($by); .pinnedAt != null))) | length),
-			   ($t | map(select(any(lineage($by); running))) | length)]
-			| @tsv'
-) || echo "warn: bb unavailable; ENV and LAST_THREAD are blank and nothing is held as in use" >&2
-# git lists canonical paths (/private/tmp, not /tmp), so match BB's in that form.
-bbenvs=$(printf '%s\n' "$bbenvs" | while IFS=$'\t' read -r path rest; do
-	[ -n "$path" ] && printf '%s\t%s\n' "$(cd "$path" 2>/dev/null && pwd -P || echo "$path")" "$rest"
-done)
+# BB usage, fetched once. Environments come from this machine only, since the
+# same path on another machine is a different directory. Thread metadata comes
+# from every project because archiving cascades across projects; no message
+# content is read from it.
+bb_known=yes
+bb_fail() { [ "$bb_known" = yes ] && echo "warn: $1; BB usage is unknown, so every row is hold-unknown" >&2; bb_known=no; }
+bb_array() { local out; out=$(bb "$@" 2>/dev/null) && jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out" && printf '%s\n' "$out"; }
+
+host=$(bb environment show "${BB_ENVIRONMENT_ID:-}" --json 2>/dev/null | jq -er '.hostId' 2>/dev/null) \
+	|| bb_fail "cannot resolve this machine's BB host from BB_ENVIRONMENT_ID"
+[ "$bb_known" = yes ] && { envs=$(bb_array environment list --host "$host" --json) || bb_fail "bb environment list failed"; }
+[ "$bb_known" = yes ] && { live=$(bb_array thread list --include-hidden --json) || bb_fail "bb thread list failed"; }
+[ "$bb_known" = yes ] && { archived=$(bb_array thread list --archived --include-hidden --json) || bb_fail "bb thread list --archived failed"; }
+
+usage=""
+if [ "$bb_known" = yes ]; then
+	# git lists canonical paths (/private/tmp, not /tmp), so match BB's in that form.
+	env_paths=$(jq -r '.[] | [.id, .path // ""] | @tsv' <<<"$envs" | while IFS=$'\t' read -r id path; do
+		[ -n "$path" ] && printf '%s\t%s\t%s\n' "$id" "$(canonical "$path")" "$path"
+	done)
+	canon=$(jq -Rn '[inputs | select(. != "") | split("\t") | {(.[0]): .[1]}] | add // {}' <<<"$env_paths")
+
+	# A thread can work in a worktree by path from another environment, so scan
+	# the logs of the projects that own this repo's environments. Never this
+	# thread, whose own output names every path.
+	projects=$(jq -r --arg main "$main_wt" --arg wts "$all_wts" --arg project "${BB_PROJECT_ID:-}" \
+		--argjson canon "$canon" \
+		'(($wts | split("\n")) + [$main]) as $repo
+		| [.[] | select($canon[.id] | IN($repo[])) | .projectId] + [$project] | map(select(. != "")) | unique | join(" ")' <<<"$envs")
+	patterns=$(while read -r wt; do
+		[ -z "$wt" ] && continue
+		{ echo "$wt"; echo "${wt#/private}"; awk -F'\t' -v p="$wt" '$2 == p { print $3 }' <<<"$env_paths"; } | sed 's#//*#/#g' | sort -u |
+			while read -r form; do printf '%s\t%s\n' "$wt" "$(printf '%s' "$form" | sed 's/[][\.*^$+?(){}|]/\\&/g')"; done
+	done <<<"$wts")
+	mentions=""
+	for id in $(jq -r --arg ps "$projects" --arg self "${BB_THREAD_ID:-}" \
+		'.[] | select(.projectId | IN($ps | split(" ")[])) | select(.id != $self) | .id' <<<"$live"); do
+		log=$(bb thread log "$id" --format json --all 2>/dev/null) || { bb_fail "cannot read the log of $id"; break; }
+		found=$(mentioned_worktrees <<<"$log") || { bb_fail "cannot scan the log of $id"; break; }
+		mentions+=$(sed '/^$/d' <<<"$found" | while read -r wt; do printf '%s\t%s\n' "$wt" "$id"; done)$'\n'
+	done
+fi
+
+if [ "$bb_known" = yes ]; then
+	# One row per worktree path: its environments, the newest activity of the
+	# threads using it, how many of those have a pinned or running thread in
+	# their ancestry, the environments outside this path that archiving its
+	# threads would reach, and the threads whose logs name it. BB's archive
+	# walks children, lifecycle dependents and hidden forks, through archived
+	# threads too, so the walk uses both lists. This thread is running only
+	# because it runs the audit, so it holds the worktree it works in but not
+	# the worktrees of its descendants.
+	usage=$(jq -rn --arg wts "$wts" --arg mentions "$mentions" --arg self "${BB_THREAD_ID:-}" --argjson canon "$canon" \
+		--argjson live "$live" --argjson archived "$archived" '
+		def running: (.status | IN("pending", "starting", "active", "stopping"))
+			or ((.queuedWork // "none") != "none")
+			or (([(.activity // {})[]] | add // 0) > 0);
+		($live + $archived) as $all
+		| ($all | INDEX(.id)) as $by
+		| (reduce $all[] as $t ({};
+			reduce ([$t.parentThreadId, $t.lifecycleOwnerThreadId,
+				(if $t.visibility == "hidden" then $t.sourceThreadId else null end)]
+				| map(select(. != null)) | unique)[] as $p (.; .[$p] += [$t.id]))) as $kids
+		| def lineage: limit(1000; recurse(($by[.parentThreadId // ""], $by[.lifecycleOwnerThreadId // ""]) // empty));
+		def cascade: limit(100000; recurse($kids[.id][]? | $by[.] // empty));
+		(reduce ($mentions | split("\n")[] | select(. != "") | split("\t")) as $m ({}; .[$m[0]] += [$m[1]])) as $named
+		| $wts | split("\n")[] | select(. != "") as $wt
+		| [$canon | to_entries[] | select(.value == $wt) | .key] as $envs
+		| [$live[] | select(.environmentId | IN($envs[]))] as $roots
+		| [$roots[] | cascade | select(.archivedAt == null and (.environmentId | IN($envs[]) | not))] as $outside
+		| ($roots + [($named[$wt] // [])[] | $by[.] // empty] | unique_by(.id)) as $users
+		| [$wt,
+			(if $envs == [] then "-" else $envs | join(",") end),
+			((($users | map(.updatedAt) | max) // 0) / 1000 | floor),
+			($users | map(select(any(lineage; .pinnedAt != null))) | length),
+			($users | map(select(.id == $self or any(lineage; .id != $self and running))) | length),
+			(if $outside == [] then "-" else [$outside[] | .environmentId // .id] | unique | join(",") end),
+			(($named[$wt] // []) | if . == [] then "-" else join(",") end)]
+		| @tsv') || bb_fail "could not join BB state to worktrees"
+fi
 now=$(date +%s)
 
-printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tENV\tLAST_THREAD\tBUCKET\tWORKTREE\n"
+printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tENV\tLAST_THREAD\tCASCADE\tMENTIONS\tBUCKET\tWORKTREE\n"
 
-git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
-	[ "$wt" = "$main_wt" ] && continue
+while read -r wt; do
+	[ -z "$wt" ] && continue
 
 	size=$(du -sh "$wt" 2>/dev/null | awk '{print $1}')
 	head=$(git -C "$wt" rev-parse HEAD 2>/dev/null)
@@ -62,14 +163,22 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	# real signal; merge-base only catches fast-forward/rebase merges.
 	git merge-base --is-ancestor "$head" origin/main 2>/dev/null && merged=YES || merged=no
 
-	# Distinguish real WIP (tracked edits) from disposable untracked scratch.
-	porcelain=$(git -C "$wt" status --porcelain 2>/dev/null)
-	if [ -z "$porcelain" ]; then dirty=clean
-	elif printf '%s\n' "$porcelain" | grep -qv '^??'; then
-		dirty="wip:$(printf '%s\n' "$porcelain" | grep -cv '^??')"
-	else dirty="scratch:$(printf '%s\n' "$porcelain" | grep -c '^??')"; fi
-
 	branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+
+	# Everything removal would lose: tracked edits, untracked files that git
+	# does not ignore (new source until someone says otherwise), and a detached
+	# HEAD that no branch, tag or remote ref contains.
+	if porcelain=$(git -C "$wt" status --porcelain 2>/dev/null); then
+		tracked=$(printf '%s' "$porcelain" | grep -cv '^??')
+		untracked=$(printf '%s' "$porcelain" | grep -c '^??')
+		dirty=""
+		[ "$tracked" -gt 0 ] && dirty="wip:$tracked"
+		[ "$untracked" -gt 0 ] && dirty="${dirty:+$dirty+}untracked:$untracked"
+		[ -z "$branch" ] && [ -z "$(git -C "$wt" for-each-ref --contains "$head" --count=1 refs/heads refs/tags refs/remotes 2>/dev/null)" ] \
+			&& dirty="${dirty:+$dirty+}unreachable"
+		dirty="${dirty:-clean}"
+	else dirty="?"; fi
+
 	if [ -z "$branch" ]; then remote=detached
 	elif git -C "$wt" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
 		[ "$(git -C "$wt" rev-parse "origin/$branch" 2>/dev/null)" = "$head" ] \
@@ -81,24 +190,27 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 		'.[] | select(.headRefName==$b) | "#\(.number)/\(.state)"' <<<"$prs" 2>/dev/null | head -1)
 	[ -z "$pr" ] && pr="-"
 
-	IFS=$'\t' read -r _ env last_ts pinned running \
-		< <(awk -F'\t' -v p="$wt" '$1 == p' <<<"$bbenvs")
-	env="${env:--}"
-	last="-"
-	[ "${last_ts:-0}" -gt 0 ] && last=$(date -r "$last_ts" '+%Y-%m-%d' 2>/dev/null)
-	[ "${pinned:-0}" -gt 0 ] && last="$last,pinned"
-	[ "${running:-0}" -gt 0 ] && last="$last,running"
+	env="?"; last="?"; cascade="?"; named="?"; last_ts=0; pinned=0; running=0
+	if [ "$bb_known" = yes ]; then
+		IFS=$'\t' read -r _ env last_ts pinned running cascade named \
+			< <(awk -F'\t' -v p="$wt" '$1 == p' <<<"$usage")
+		last="-"
+		[ "${last_ts:-0}" -gt 0 ] && last=$(date -r "$last_ts" '+%Y-%m-%d' 2>/dev/null)
+		[ "${pinned:-0}" -gt 0 ] && last="$last,pinned"
+		[ "${running:-0}" -gt 0 ] && last="$last,running"
+	fi
 	recent=$([ "${last_ts:-0}" -gt 0 ] && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
 
-	case "$dirty" in wip:*) bucket=hold-wip ;; *)
-		if [ "${pinned:-0}" -gt 0 ] || [ "${running:-0}" -gt 0 ]; then bucket=hold-in-use; else
-		case "$pr" in *OPEN*) bucket=hold-open-pr ;; *)
-			if [ "$recent" = yes ]; then bucket=verify-recent-chat
-			elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
-			else bucket=review; fi ;;
-		esac; fi ;;
-	esac
+	# First match wins, so every hold outranks every go.
+	if [ "$bb_known" != yes ] || [ "$dirty" = "?" ]; then bucket=hold-unknown
+	elif [ "$dirty" != clean ]; then bucket=hold-wip
+	elif [ "${pinned:-0}" -gt 0 ] || [ "${running:-0}" -gt 0 ]; then bucket=hold-in-use
+	elif [ "$cascade" != "-" ]; then bucket=hold-cascade
+	elif [[ "$pr" == *OPEN* ]]; then bucket=hold-open-pr
+	elif [ "$recent" = yes ]; then bucket=verify-recent-chat
+	elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
+	else bucket=review; fi
 
-	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-		"$size" "$age" "$merged" "$dirty" "$remote" "$pr" "$env" "$last" "$bucket" "$wt"
-done | sort -t$'\t' -k1,1 -rh
+	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+		"$size" "$age" "$merged" "$dirty" "$remote" "$pr" "$env" "$last" "$cascade" "$named" "$bucket" "$wt"
+done <<<"$wts" | sort -t$'\t' -k1,1 -rh

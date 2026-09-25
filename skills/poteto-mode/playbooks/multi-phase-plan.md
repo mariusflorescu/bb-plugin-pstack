@@ -33,15 +33,15 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] State the protocol and this plan to the operator, then stop. Start execution only on the operator's explicit go.
 - [ ] On the operator's go, arm a `/goal` with this exact text. "<The plan path, the PR ids in order, the verification rule, who merges, and the done condition.>"
-- [ ] Read these at program start. Read skills from the skill directories BB loaded, not from a repo. Re-read them at every tick.
-  - [ ] The poteto-mode skill's `playbooks/<execution playbook>.md`.
-  - [ ] The swarm skill's `SKILL.md`.
+- [ ] Read these from trunk at program start. Re-read them at every tick. Read pstack files with the poteto-mode skill's `scripts/read-from-trunk.sh`, never from the copy BB loaded at thread start, and log the trunk revision it prints in the decision trail.
+  - [ ] `read-from-trunk.sh skills/poteto-mode/playbooks/<execution playbook>.md`
+  - [ ] `read-from-trunk.sh skills/swarm/SKILL.md`
   - [ ] `git show origin/main:<control skill path>`, or `bb guide browser` or `bb guide terminals` when the project has no verification skill.
-  - [ ] The poteto-mode skill's `playbooks/opening-a-pr.md`.
-  - [ ] The `SKILL.md` of each other leaf skill the program uses.
-- [ ] Arm the 30-minute audit tick as a BB automation that re-prompts the root thread, `bb automation create --cron '*/30 * * * *' --timezone <tz> --target-thread <root thread id>` with the tick prompt below. Never leave the cadence to memory. Delete it at close.
-- [ ] Use this tick prompt, verbatim. "Re-read the execution playbook from the poteto-mode skill and the armed /goal. Audit the operation against both and fix drift in this tick. Probe every active lane and judge progress by side effects only. Stand down a stuck lane and dispatch its replacement now. Then post a short status message to the operator in chat only when the audit found a tracked change that no earlier status message reported, such as a PR opened, a code-ready head, a round launched or closed, a verdict, a merge, a stuck agent and the action taken, a blocker added or cleared, or a decision only the operator can make. Name every such change and nothing else. Do not repeat a table, the merged list, or an unchanged blocker. If the audit found none, end the turn with no reply text. Either way, log this tick's row in your decision trail. The row names the items reported, or none."
-- [ ] On the operator's hold or stand-down, send every owner a zero-writes order at once with `bb thread tell`.
+  - [ ] `read-from-trunk.sh skills/poteto-mode/playbooks/opening-a-pr.md`
+  - [ ] `read-from-trunk.sh skills/<each other leaf skill the program uses>/SKILL.md`
+- [ ] Arm the 30-minute audit tick as a BB automation that re-prompts the root thread, `bb automation create --project "$BB_PROJECT_ID" --name "<program> audit tick" --cron '*/30 * * * *' --timezone <IANA zone> --target-thread <root thread id> --prompt "<the tick prompt below>" --provider <root provider> --model <root model> --json`. Record the `id` it prints in the decision trail. Never leave the cadence to memory. Delete it at close with `bb automation delete <id> --project "$BB_PROJECT_ID" --yes`.
+- [ ] Use this tick prompt, verbatim. "If the operator's latest order is a hold or stand-down, dispatch nothing and end the turn with no reply text. Otherwise re-read the armed /goal, and the execution playbook from trunk with the poteto-mode skill's scripts/read-from-trunk.sh. Audit the operation against both and fix drift in this tick. Probe every active lane and judge progress by side effects only. Stand down a stuck lane and dispatch its replacement now. Then post a short status message to the operator in chat only when the audit found a tracked change that no earlier status message reported, such as a PR opened, a code-ready head, a round launched or closed, a verdict, a merge, a stuck agent and the action taken, a blocker added or cleared, or a decision only the operator can make. Name every such change and nothing else. Do not repeat a table, the merged list, or an unchanged blocker. If the audit found none, end the turn with no reply text. Either way, log this tick's row in your decision trail. The row names the items reported, or none."
+- [ ] On the operator's hold or stand-down, pause the tick with `bb automation pause <id> --project "$BB_PROJECT_ID"`, log the hold in the decision trail, and send every owner a zero-writes order at once with `bb thread tell`. On the operator's go, resume the tick with `bb automation resume <id> --project "$BB_PROJECT_ID"`.
 
 ### Spawn owners
 
@@ -69,10 +69,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 ### Boot recipe, for every live lane
 
-Each live lane is a swarm worker in its own worktree at the PR head (`--new-environment worktree --base-branch origin/<head-branch>`). Drive the surface only through the control skill in the reading list above.
+Each live lane is a swarm worker in its own worktree at the PR head (`--new-environment worktree --base-branch origin/<head-branch>`). A worktree separates files, not ports, databases, simulators or browser profiles, so give each lane its own. A resource that cannot be split puts its lanes on other enrolled machines (`--machine <name>`) or runs them one after another. Drive the surface only through the control skill in the reading list above.
 
 - [ ] `git fetch origin <head-branch> && git checkout <head SHA>`.
-- [ ] <Start the backend and the surface. Wait for ready.>
+- [ ] <Start the backend and the surface on this lane's own ports, data directory and browser target. Wait for ready.>
+- [ ] <Prove the surface this lane drives is served from this worktree at the head SHA, such as a health endpoint that reports the SHA or the listening process's working directory.>
 - [ ] <Deliver input only through the control skill's commands. Name the read-only diagnostics.>
 - [ ] Save every screenshot to `$BB_THREAD_STORAGE/swarm-<pr-id>/<slug>.png` and return the absolute paths with the report.
 
