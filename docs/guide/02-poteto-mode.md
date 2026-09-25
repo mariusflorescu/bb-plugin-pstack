@@ -55,7 +55,7 @@ Short works because the mode is sticky and the playbook holds the structure. You
 
 ## Switch tasks with "new task"
 
-A long chat accumulates context from the last task. When you change subjects, say so:
+A long thread accumulates context from the last task. When you change subjects, say so:
 
 ```text
 /poteto-mode new task. figure out why the cache entry survives logout. don't change any code yet.
@@ -71,7 +71,7 @@ If you run several agents against one repository, they will fight over the worki
 /poteto-mode new task. branch off <base> in a fresh worktree, then port the parser change there.
 ```
 
-Each task in its own branch and worktree means no agent stomps another's files. The [Opening a PR playbook](../../skills/poteto-mode/playbooks/opening-a-pr.md) already works from a worktree for code changes, so mostly you only say this when a specific base or location matters.
+Each task in its own branch and worktree means no agent stomps another's files. On bb you can also start the thread itself in a new worktree environment. The [Opening a PR playbook](../../skills/poteto-mode/playbooks/opening-a-pr.md) already works from a worktree for code changes, so mostly you only say this when a specific base or location matters.
 
 Worktrees accumulate. When disk gets tight, ask:
 
@@ -79,7 +79,7 @@ Worktrees accumulate. When disk gets tight, ask:
 /poteto-mode what's eating my disk? prune the worktrees that are safe to prune.
 ```
 
-The [Worktree cleanup playbook](../../skills/poteto-mode/playbooks/worktree-cleanup.md) classifies every worktree by merge state, uncommitted work, and which chats still touch it. It deletes only what that evidence clears and pauses for your call on anything holding uncommitted work.
+The [Worktree cleanup playbook](../../skills/poteto-mode/playbooks/worktree-cleanup.md) classifies every worktree by merge state, uncommitted work, and which bb threads still use it, including any that are pinned or running. It deletes only what that evidence clears and pauses for your call on anything holding uncommitted work.
 
 ## Leave it running
 
