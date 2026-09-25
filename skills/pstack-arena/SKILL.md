@@ -25,8 +25,8 @@ The N candidates will receive the same prompt, so the prompt is the contract.
 
 1. State the artifact each candidate is producing.
 2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria. The rubric is the picker's tool in Phase D. Candidates only see the task.
-3. Pick the runners. Take one runner per entry of your arena runners line, spawned per the pstack delegation rules. If `bb thread spawn` rejects an entry's model, pick the closest model of the same family from `bb provider models <provider>`, run that seat on it, and say so. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.
-4. Assign output paths. Each candidate writes to its own location per the **separate-before-serializing-shared-state** principle skill. Spawn a candidate that writes into the repo with `--new-environment worktree` and have it commit on its worktree branch. Otherwise give it its own directory `$BB_THREAD_STORAGE/arena-<slug>/candidate-<n>/`, expanded to an absolute path in its brief, because a child's `$BB_THREAD_STORAGE` is its own.
+3. Pick the runners. Take one runner per entry of your arena runners line, spawned per the pstack delegation rules. Phase B reseats an entry whose model the provider rejects. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.
+4. Assign output paths. Each candidate writes to its own location per the **separate-before-serializing-shared-state** principle skill. In a git repository, a candidate that writes code gets `--new-environment worktree --base-branch <baseline>` and commits on its worktree branch. Resolve the baseline once with `git rev-parse HEAD` in your environment and give every candidate that same SHA, so all of them start from the code you grounded on. A worktree holds only committed files, so commit any uncommitted code the task builds on before you resolve it. Any other candidate (a project that is not a git repository, or an artifact that is not code) spawns into your environment and writes to its own directory `$BB_THREAD_STORAGE/arena-<slug>/candidate-<n>/`, expanded to an absolute path in its brief, because a child's `$BB_THREAD_STORAGE` is its own.
 
 ## Phase B: Fan out
 
@@ -42,11 +42,11 @@ for id in <candidate ids>; do
 done
 ```
 
-A worktree candidate's files live at `.environment.path` in `bb thread show <id> --json`, on the branch `.environment.branchName`. A candidate that fails never reaches idle, so its wait times out. If a candidate fails to produce output, proceed with N-1 and note the dropout in the synthesis record.
+A worktree candidate's files live at `.environment.path` in `bb thread show <id> --json`, on the branch `.environment.branchName`. A candidate that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the seat's model or effort, at spawn or when the candidate started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that seat again on it with the same brief and environment flags, and say so. If a candidate fails to produce output for any other reason, proceed with N-1 and note the dropout in the synthesis record.
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, spawn one judge per the pstack delegation rules on the first entry of your arena cross-judge pool whose model family differs from yours, titled `arena judge: <slug>`. It shares your environment, and its brief says it is read-only and must not edit files, commit or push. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Collect it with a background `bb thread wait` then `bb thread output` while you read. Don't spawn the judge while candidates are still writing.
+After all Phase B candidates complete, spawn one judge per the pstack delegation rules on the first entry of your arena cross-judge pool whose model family differs from yours, titled `arena judge: <slug>`. It shares your environment, and its brief says it is read-only and must not edit files, commit or push. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Collect it with a background `bb thread wait` then `bb thread output` while you read, and reseat it per Phase B if its provider rejects the model. Don't spawn the judge while candidates are still writing.
 
 ## Phase D: Pick a base
 
@@ -76,4 +76,4 @@ If verification surfaces a problem the arena did not catch, either Phase A was w
 
 ## Outputs
 
-One synthesized artifact. One short synthesis note alongside, naming the base, the grafts (with source candidate), the rejections, the dropouts if any, and the verification result.
+One synthesized artifact. One short synthesis note alongside, naming the baseline SHA for worktree candidates, the base, the grafts (with source candidate), the rejections, the dropouts if any, and the verification result.
