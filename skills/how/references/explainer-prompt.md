@@ -1,6 +1,6 @@
 # Explainer Prompt Template
 
-Build the explainer subagent's prompt from this template. Fill in the placeholders.
+Build the explainer thread's prompt from this template. Fill in the placeholders.
 
 ---
 
@@ -20,11 +20,11 @@ The explorers each investigated a different angle of the same subsystem. Their f
 
 Write an explanation a senior engineer unfamiliar with this area could read and walk away with a solid mental model, understanding the architecture well enough to start working in it confidently.
 
-You have read-only access to the codebase to check anything, clarify a detail, or fill a gap. Use Read, Grep, and Glob as needed. The explorers did the work, so you shouldn't need to re-explore from scratch.
+Read-only: do not edit files, commit or push. Read the codebase to check anything, clarify a detail, or fill a gap. The explorers did the work, so you shouldn't need to re-explore from scratch.
 
 ## Output Format
 
-Use this structure, adapted to what makes sense for the question. Not every section is needed for every question.
+Your final message is the explanation. Use this structure, adapted to what makes sense for the question. Not every section is needed for every question.
 
 ### Overview
 1-2 paragraphs. What is this thing, what does it do, why does it exist. Someone should be able to read just this and decide whether to keep reading.

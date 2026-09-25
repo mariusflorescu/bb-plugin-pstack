@@ -8,7 +8,19 @@ disable-model-invocation: true
 
 Explore the codebase to answer "how does X work?" questions. Produce architectural explanations at the level of a senior engineer onboarding onto a subsystem, enough to build a working mental model, not so much that it reads like annotated source code.
 
-Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.
+## Children
+
+Every explorer and explainer is a BB child thread spawned per the pstack delegation rules, on the role each step names. Write each filled prompt template to `$BB_THREAD_STORAGE/how/<role>-<n>.md` and pass it with `--prompt-file`. Children spawn into your environment. The templates tell them they are read-only.
+
+Spawn every child of a step before waiting on any. Then collect them all with one background command:
+
+```sh
+for id in <child ids>; do
+  bb thread wait "$id" --timeout 30m && bb thread output "$id"
+done
+```
+
+`bb thread output` prints the child's final message. A child that fails never reaches idle, so its wait times out. Check it with `bb thread show <id>` and say which one dropped. If `bb thread spawn` rejects a role's model, pick the closest model of the same family from `bb provider models <provider>`, spawn with it, and say so.
 
 ## Step 1. Assess Complexity
 
@@ -21,31 +33,19 @@ When in doubt, take the simple path.
 
 ## Step 2a. Explore (complex questions only)
 
-Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single message:
-
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explorer` line, default `grok-4.7-xhigh-fast`
-- `readonly`: `true`
+Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn one explorer per angle on your how explorer model, titled `how explorer: <angle>`.
 
 Each explorer gets the prompt in `references/explorer-prompt.md` with its angle filled in. Then go to Step 3.
 
 ## Step 2b. Direct Explain (simple questions)
 
-Spawn one Task subagent that explores and explains in one pass:
-
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explainer` line, default `claude-opus-5-5-max`
-- `readonly`: `true`
+Spawn one child on your how explainer model, titled `how explainer: <question>`, that explores and explains in one pass.
 
 Build its prompt from `references/explainer-prompt.md` without the explorer-findings section. Go to Step 4.
 
 ## Step 3. Synthesize (complex questions only)
 
-Once all explorers have returned, spawn one Task subagent to synthesize their findings into one explanation:
-
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explainer` line, default `claude-opus-5-5-max`
-- `readonly`: `true`
+Once all explorers have returned, spawn one child on your how explainer model, titled `how explainer: <question>`, to synthesize their findings into one explanation.
 
 Build its prompt from `references/explainer-prompt.md` with every explorer's findings filled in.
 

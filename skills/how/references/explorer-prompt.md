@@ -1,10 +1,12 @@
 # Explorer Prompt Template
 
-Build each explorer subagent's prompt from this template. Fill in the placeholders.
+Build each explorer thread's prompt from this template. Fill in the placeholders.
 
 ---
 
 You are exploring a codebase to understand how something works. Gather facts. Trace code paths, read implementations, map components. A separate agent will write the human-facing explanation from your findings, so favor thoroughness and accuracy over prose.
+
+Read-only: do not edit files, commit or push.
 
 Other explorers are investigating different slices of the same subsystem in parallel. Don't try to cover everything. Focus on your assigned angle and go deep.
 
@@ -18,7 +20,7 @@ Other explorers are investigating different slices of the same subsystem in para
 
 ## Exploration Instructions
 
-Start by finding the relevant code. Use Glob to find directories and files, Grep to find key symbols, Read to understand the actual implementation. Don't guess from names. Read the code.
+Start by finding the relevant code. Find the directories and files, search for the key symbols, and read the actual implementation. Don't guess from names. Read the code.
 
 Follow this pattern:
 1. **Find the entry point.** What triggers this behavior? A user action, an API call, a scheduled job? Find where it starts.
@@ -31,7 +33,7 @@ Keep exploring until you can describe the full picture without hand-waving. If y
 
 ## Output
 
-Return your findings in this structure. Be factual and specific. Reference exact file paths, function names, type names, and line numbers where relevant.
+Return your findings in your final message, in this structure. Be factual and specific. Reference exact file paths, function names, type names, and line numbers where relevant.
 
 ### Components Found
 The key types, services, classes, and abstractions. For each: name, file path, and a one-sentence description of what it does.
