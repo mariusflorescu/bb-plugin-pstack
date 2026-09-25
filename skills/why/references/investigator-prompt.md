@@ -6,6 +6,8 @@ Build each investigator's prompt from this template. Fill in the placeholders. A
 
 You are investigating the historical context and motivation behind a piece of code. A separate synthesizer combines your findings with other investigators' into a final answer, so gather evidence accurately rather than writing prose.
 
+Read-only: do not edit files, commit, push, or change external state. Calling MCP tools to read is expected.
+
 Other investigators search different sources in parallel. Don't try to cover everything. Focus on your assigned source and go deep.
 
 ## Operating Posture
@@ -40,6 +42,8 @@ Work like a careful, cautious, precise investigator. Don't produce a narrative. 
 
 {SOURCE_NAME}
 
+If this source's MCP is not in your session, record that under Gaps and stop. Do not substitute another source.
+
 {SOURCE_PLAYBOOK_SECTION}
 
 ## Investigation Instructions
@@ -64,7 +68,7 @@ Don't synthesize or form a final opinion on "the why." Collect the raw material 
 
 ## Output Format
 
-Return your findings in this structure. The synthesizer will read it directly.
+Return your findings in your final message, in this structure. The synthesizer will read it directly.
 
 ### Source
 Which source you investigated (source control, issue / ticket tracker, long-form documents, real-time team chat, infrastructure observability, error / exception tracking, product analytics warehouse, code comments, etc.).
