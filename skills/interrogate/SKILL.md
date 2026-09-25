@@ -49,7 +49,7 @@ for id in <reviewer ids>; do
 done
 ```
 
-A reviewer that fails never reaches idle, so its wait times out. Check it with `bb thread show <id>` and name the dropout in the verdict. If `bb thread spawn` rejects an entry's model, pick the closest model of the same family from `bb provider models <provider>`, spawn that reviewer on it, and say so in the verdict so the user can fix the mapping with `/setup-pstack`. Do not block the review on it.
+A reviewer that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the entry's model or effort, at spawn or when the reviewer started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that reviewer again on it with the same brief, and say so in the verdict so the user can fix the mapping with `/setup-pstack`. Do not block the review on it. Name any other dropout in the verdict.
 
 ## Step 4, Synthesize
 
