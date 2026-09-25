@@ -26,13 +26,20 @@ Write `HANDLER.md` in the UI's own directory. The woken thread reads it on every
 
 Store `{threadId, bb}` in that UI's own directory. `bb` is the absolute path of the CLI, from `$BB_CLI` or `command -v bb`. Buttons POST to this local server. The local server, not the browser, wakes the thread.
 
-Bind the server to `127.0.0.1:<port>` when only this computer uses the page. To serve the tailnet, bind to this node's Tailscale address from `tailscale ip -4`. Never bind `0.0.0.0`: the server wakes an agent with no key, so any device on the local network could send it events.
+Bind the server to `127.0.0.1:<port>` when only this computer or a BB Connect share uses the page. To serve the tailnet, bind to this node's Tailscale address from `tailscale ip -4`. Never bind `0.0.0.0`: the server wakes an agent with no key, so any device on the local network could send it events.
+
+The bind decides which devices reach the server. It does not stop a web page open in the user's browser from posting to it. Check every POST before it wakes the thread, the way BB checks its own local routes:
+
+- `content-type` must be `application/json`. Reject anything else with 415.
+- An `origin` header, when present, must match a URL you give the user, such as `http://127.0.0.1:<port>` or a tailnet URL. Reject any other value with 403. Browsers send it on every POST. A shell probe sends none.
+
+BB Connect rewrites its share's origin to `http://127.0.0.1:<port>` before the request reaches the server, so a Connect share needs no extra entry.
 
 Run the server in a BB terminal so it outlives your turn and the user can read its logs:
 
 ```
 bb terminal create --thread "$BB_THREAD_ID" --title "<ui name>" --command "<start command>"
-bb terminal wait <terminal-id> --contains "<ready line>" --timeout 60s
+bb terminal wait <terminal-id> --contains "<ready line>" --from-start --timeout 60s
 ```
 
 For each click, the server runs:
@@ -102,5 +109,5 @@ Keep the field list small.
 
 - `bb.http.route("POST", "/wake", handler, { auth: "token" })` mounts `/api/v1/plugins/<plugin-id>/http/wake` on the BB server.
 - The handler parses the body and wakes the thread with `bb.sdk.threads.send`, using the same message shape as above.
-- The sender puts the plugin token in the `x-bb-plugin-token` header. Write it straight into the sender's config with `bb plugin token <plugin-id> > <config path>`. Do not print it. `bb plugin token <plugin-id> --rotate` invalidates a leaked token.
+- The sender puts the plugin token in the `x-bb-plugin-token` header. Write it straight into the sender's server-side config with `bb plugin token <plugin-id> > <config path>`. Rotate a leaked token with `bb plugin token <plugin-id> --rotate > <config path>`. Rotation prints the new token too. Keep the token on the sender's server. Do not put it in the browser or in chat. Do not print it. Do not log it.
 - Use `auth: "none"` only for a service that signs its requests, and verify the signature in the handler.
