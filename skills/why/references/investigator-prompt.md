@@ -42,7 +42,7 @@ Work like a careful, cautious, precise investigator. Don't produce a narrative. 
 
 {SOURCE_NAME}
 
-If this source's MCP is not in your session, record that under Gaps and stop. Do not substitute another source.
+If this source is an MCP that is not in your session, record that under Gaps and stop. Do not substitute another source. Source control runs on git and `gh` and needs no MCP.
 
 {SOURCE_PLAYBOOK_SECTION}
 
