@@ -33,28 +33,23 @@ Write one clear paragraph. If you're unsure about the intent, ask the user befor
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message using the Task tool. Use the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`, one reviewer per entry, extending or shrinking the Reviewer A/B/C labels below to the configured entry count. If the rule or that line is missing, use the table defaults.
-
-| Subagent | Default model |
-|----------|---------------|
-| Reviewer A | `claude-opus-5-5-max` |
-| Reviewer B | `gpt-5.6-sol-max` |
-| Reviewer C | `grok-4.7-xhigh-fast` |
-
-For each reviewer:
-- `subagent_type`: `generalPurpose`
-- `model`: the configured `interrogate reviewers` entry, or the table default with no configured line. For an `auto` or `inherit-parent` entry, omit `model` so that reviewer runs on the parent model.
-- `readonly`: `true`
-
-If the Task tool rejects a configured entry, run that reviewer on the table default of its family and say so. Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`. With no family match, use Reviewer A's default. If it rejects a table default, check the valid slugs in the Task tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with it, and open a separate PR to update the default table. Do not block the review on the slug issue. Never treat an alias entry as a rejected slug or apply either fallback to it.
-
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent
 2. The diff or file contents
 3. The review rubric from `references/rubric.md`
 4. The code-quality lens from `references/code-quality-review.md`
 
-The same filled template goes to all reviewers, so every model applies the code-quality lens.
+The same filled template goes to all reviewers, so every model applies the code-quality lens. Write it once to `$BB_THREAD_STORAGE/interrogate/brief.md`. The template tells reviewers they are read-only.
+
+Every reviewer is a BB child thread spawned per the pstack delegation rules, one per entry of your interrogate reviewers line, labeled Reviewer A, B, C and onward in entry order. Spawn each into your environment with `--prompt-file` on the brief, titled `interrogate reviewer <label>`. Spawn all of them before waiting on any, then collect them with one background command:
+
+```sh
+for id in <reviewer ids>; do
+  bb thread wait "$id" --timeout 30m && bb thread output "$id"
+done
+```
+
+A reviewer that fails never reaches idle, so its wait times out. Check it with `bb thread show <id>` and name the dropout in the verdict. If `bb thread spawn` rejects an entry's model, pick the closest model of the same family from `bb provider models <provider>`, spawn that reviewer on it, and say so in the verdict so the user can fix the mapping with `/setup-pstack`. Do not block the review on it.
 
 ## Step 4, Synthesize
 
