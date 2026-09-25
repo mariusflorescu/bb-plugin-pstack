@@ -18,7 +18,7 @@ Examples of the pattern:
 - User describes a flaky test the agent could have queried via an observability MCP. Routing: the debugging skill should mention the observability MCP.
 - User links a chat thread the agent could have fetched via a chat MCP. Routing: the relevant skill should mention the chat MCP.
 
-Read the active transcript with `bb thread log <THREAD_ID> --format verbose --all` (or use the digest below if no thread ID is given). When it points at a child thread's work, `bb thread list --parent-thread <THREAD_ID>` lists the children and `bb thread log <id>` reads one.
+Read the active transcript with `bb thread log <THREAD_ID> --format verbose --all` (or use the digest below if no thread ID is given). Verbose can shorten a command to a label and drop its output, so take exact commands, flags, outputs and errors from the raw events (`--format json --all`). The session's child threads are <CHILD_THREAD_IDS>. When the transcript points at a child's work, read that child the same way. Read no other thread.
 
 Scan for:
 - Tool invocations and command flags the agent had to discover

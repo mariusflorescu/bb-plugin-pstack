@@ -16,13 +16,13 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 
 ### 1. Locate the active transcript
 
-The active transcript is this thread's BB log. Reviewers read it themselves, so hand them the thread ID (`$BB_THREAD_ID`), not a copy.
+The active transcript is this thread's BB log. Reviewers read it themselves, so hand them the thread ID (`$BB_THREAD_ID`), not a copy. Children this thread spawned keep their own logs. List them now, before step 2 makes the reviewers children too:
 
 ```bash
-bb thread log "$BB_THREAD_ID" --format verbose --all
+bb thread list --parent-thread "$BB_THREAD_ID" --include-hidden --json
 ```
 
-`verbose` keeps every tool call and its output. Children this thread spawned keep their own logs (`bb thread list --parent-thread "$BB_THREAD_ID"`), and their reports already sit in this thread's log. Read only this thread and its children. Do not use `bb thread search` or open other projects' threads. That crosses project boundaries and reads private chats from unrelated work.
+The transcript is this thread plus those children. Do not use `bb thread search` or open any other thread. That reads private chats from unrelated work.
 
 If the log does not load, write a tight digest of the session and pass that instead.
 
@@ -36,7 +36,7 @@ Spawn three child threads at once, one per lens, with `bb thread spawn --parent-
 | Tooling | `reflect tooling` | `references/tooling-reviewer.md` |
 | Divergent | `reflect judgment, divergent, synthesizer` | `references/divergent-reviewer.md` |
 
-Pass each template verbatim, substituting the thread ID or digest where marked. Each reviewer's findings are its final message. Collect all three in one background command with `bb thread wait <id>` then `bb thread output <id>`.
+Pass each template verbatim, substituting the thread ID, the child IDs from step 1 (or `none`), or the digest where marked. Each reviewer's findings are its final message. Collect all three in one background command with `bb thread wait <id>` then `bb thread output <id>`.
 
 ### 3. Synthesize
 
@@ -59,7 +59,7 @@ For each approved Accepted item, follow the Routing field exactly:
 - `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its trigger check with near-miss prompts.
 - `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`. Do not invent the shape ad hoc.
 
-A routing may name a skill without a path. `bb skill list --json` maps each name to its `filePath`. For a plugin skill that path is a runtime copy, so edit the plugin's source instead.
+A routing may name a skill without a path. `bb skill list --environment "$BB_ENVIRONMENT_ID" --json` maps each name to its `filePath` in this workspace. For a plugin skill, find the plugin whose `rootDir` in `bb plugin list --json` holds that path, then read `bb plugin source <plugin-id> --json`. A `path:` source is the plugin's own checkout, so edit it there. A `git:` or `npm:` source is an install cache that the next update replaces, so edit the repository or package it names. A `builtin:` plugin ships with BB, so its change goes to Backlog.
 
 If your environment ships a SKILL.md validator, run it on every touched skill before declaring done. Skip this step if it doesn't.
 
