@@ -20,7 +20,7 @@ for id in <child ids>; do
 done
 ```
 
-`bb thread output` prints the child's final message. A child that fails never reaches idle, so its wait times out. Check it with `bb thread show <id>` and say which one dropped. If `bb thread spawn` rejects a role's model, pick the closest model of the same family from `bb provider models <provider>`, spawn with it, and say so.
+`bb thread output` prints the child's final message. A child that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the role's model or effort, at spawn or when the child started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that child again on it with the same brief, and say so. For any other failure, say which child dropped.
 
 ## Step 1. Assess Complexity
 
