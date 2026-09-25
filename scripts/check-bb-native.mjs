@@ -92,7 +92,7 @@ function checkServerList(dirs) {
   return findings;
 }
 
-const allDirs = readdirSync(SKILLS).filter((d) => statSync(join(SKILLS, d)).isDirectory()).sort();
+const allDirs = readdirSync(SKILLS).filter((d) => !d.startsWith(".") && statSync(join(SKILLS, d)).isDirectory()).sort();
 const selected = process.argv.slice(2);
 const targets = selected.length ? selected : allDirs;
 const findings = targets.flatMap(checkSkill);
