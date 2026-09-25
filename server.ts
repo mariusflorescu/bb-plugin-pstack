@@ -147,9 +147,13 @@ function delegationRules(providerId: string, model: string, models: string): str
 
 You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
 
-bb thread spawn --parent-self --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
+bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Take provider, model and effort from the role's line below. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. Children report back to this thread; collect results with bb thread wait <id> then bb thread output <id>. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours. A read-only role says so in its brief. An isolated workspace is --new-environment worktree.
+Take provider, model and effort from the role's line below. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree instead of --environment. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
+
+for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
+
+Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours.
 
 Role models (provider / model @effort):
 ${models}`;

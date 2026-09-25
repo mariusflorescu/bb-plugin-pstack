@@ -28,7 +28,7 @@ not restate the mapping.
 
 | Cursor / upstream | BB |
 |---|---|
-| `Task` tool, "spawn a subagent", `subagent_type`, "delegate" | A child thread: `bb thread spawn --parent-self --provider <p> --model <m> --reasoning-level <e> --title "<role>: <slice>" --prompt-file <brief>`. Provider, model and effort come from the role's entry in the pstack delegation rules. Never the provider's built-in subagent tool (Claude Code `Agent`/`Explore`/`Task`, Codex subagents). |
+| `Task` tool, "spawn a subagent", `subagent_type`, "delegate" | A child thread: `bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <p> --model <m> --reasoning-level <e> --title "<role>: <slice>" --prompt-file <brief>`. A child that writes code in parallel with others takes `--new-environment worktree` instead of `--environment`. Provider, model and effort come from the role's entry in the pstack delegation rules. Never the provider's built-in subagent tool (Claude Code `Agent`/`Explore`/`Task`, Codex subagents). |
 | `run_in_background: true`, "fire and wait" | Spawning never blocks. Children report their turns to the parent. Collect with `bb thread wait <id>` then `bb thread output <id>`; wait on N children in one background command. |
 | Resume / follow up a subagent | `bb thread tell <id> --message-file <path>`. A fresh child with consolidated scope is still preferred over resuming (upstream rule). |
 | `readonly: true` subagent | State "read-only: do not edit files, commit or push" in the brief. Spawn into the parent's environment (default) so it reads the same tree. |
