@@ -3,7 +3,8 @@
 # A stub `bb` holds a coordinator, sub-coordinator and worker tree with a hidden
 # worker and a worker in another project, and behaves the way BB does: a stop
 # leaves the queue and the thread's terminals alone, a terminal list shows only
-# live sessions, a message queued behind a turn dispatches when that
+# live sessions, a terminal close forces unless --if-clean, which answers with
+# a terminal that took input unchanged, a message queued behind a turn dispatches when that
 # turn ends, a stopped child's report wakes its idle parent, a machine can
 # still run a turn for a thread listed idle or error until a stop interrupts
 # it, a thread list
@@ -64,10 +65,19 @@ case "\$1 \$2" in
 		[ -n "\${LOCK_ON_TERMINALS:-}" ] && chmod 555 "$S/storage"
 		jq --arg t "\$4" '{sessions: [.[] | select(.threadId == \$t and (.status | IN("starting", "running", "disconnected")))]}' "\$terms" ;;
 	"terminal close")
-		echo "close \$3" >> "\$calls"
+		id="\$3" mode=force json=""
+		for a in "\${@:4}"; do [ "\$a" = --if-clean ] && mode=if-clean; [ "\$a" = --json ] && json=1; done
+		echo "close \$id" >> "\$calls"
+		[ "\$mode" = force ] && echo "force \$id" >> "\$calls"
 		# TERMFAIL: the close call fails and the terminal keeps running.
-		[ "\$3" = "\${TERMFAIL:-}" ] && { echo "cannot close \$3" >&2; exit 1; }
-		update "\$terms" --arg id "\$3" 'map(if .id == \$id then .status = "exited" | .closeReason = "user" else . end)' ;;
+		[ "\$id" = "\${TERMFAIL:-}" ] && { [ -n "\$json" ] && echo '{"ok":false,"error":{"code":"host_disconnected","message":"Host is not connected"}}'; echo "cannot close \$id" >&2; exit 1; }
+		# TYPED: input reaches the terminal after it was listed and before the close.
+		[ "\$id" = "\${TYPED:-}" ] && update "\$terms" --arg id "\$id" 'map(if .id == \$id then .lastUserInputAt = 1758844800000 else . end)'
+		# Like BB: --if-clean answers with a terminal that took input unchanged, and exit 0.
+		update "\$terms" --arg id "\$id" --arg mode "\$mode" 'map(if .id == \$id and .status != "exited" and (\$mode == "force" or .lastUserInputAt == null)
+			then .status = "exited" | .closeReason = "user" else . end)'
+		[ -n "\$json" ] && jq --arg id "\$id" '.[] | select(.id == \$id)' "\$terms"
+		exit 0 ;;
 	"automation list") [ "\$3" = --project ] || exit 2
 		jq --arg p "\$4" '[.[] | select(.projectId == \$p)]' "\$autos" ;;
 	"automation pause") [ "\$4" = --project ] || exit 2
@@ -175,7 +185,32 @@ expect "term_dev saved for the resume" "$(jq -rs '.[] | select(.id == "term_dev"
 	"terminal thr_w1 pnpm dev /work/app"
 expect "term_watch saved for the resume" "$(jq -rs '[.[] | select(.kind == "terminal") | .id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "term_dev term_watch"
 expect "term_dev named" "$(grep -c '^closed terminal term_dev of thr_w1 (pnpm dev) in /work/app' <<<"$out" || true)" 1
+expect "every close is --if-clean" "$(grep -c '^force ' "$S/calls" || true)" 0
 expect "settled" "$(grep -c '^settled ' <<<"$out" || true)" 1
+
+echo "# a terminal that took input stays open: never force-closed, tried once, no recovery row, named with its first input, and the tree is left unsettled for the operator"
+seed
+jq '. + [{"id":"term_repl","threadId":"thr_w1","title":"psql","initialCwd":"/work/app","status":"running","exitCode":null,"closeReason":null,"lastUserInputAt":1758844800000}]' \
+	"$S/terminals.json" > "$S/terminals.new" && mv "$S/terminals.new" "$S/terminals.json"
+out=$(run) && code=0 || code=$?
+expect "typed-in exit" "$code" 1
+expect "typed-in still running" "$(term term_repl)" running
+expect "typed-in never force-closed" "$(grep -c '^force ' "$S/calls" || true)" 0
+expect "typed-in tried once, not every pass" "$(calls "close term_repl")" 1
+expect "typed-in named" "$(grep -c '^  thr_w1 term_repl running psql 2025-09-26T00:00:00Z$' <<<"$out" || true)" 1
+expect "typed-in keeps no recovery row" "$(jq -rs '[.[] | select(.id == "term_repl")] | length' "$S/storage/pause-tree-thr_root.jsonl")" 0
+expect "typed-in never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
+expect "clean terminals still closed" "$(term term_dev) $(term term_watch)" "exited exited"
+for id in thr_sub thr_w1 thr_w2 thr_far thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
+
+echo "# input that reaches a terminal between its listing and its close keeps it open too"
+seed
+out=$(run TYPED=term_dev) && code=0 || code=$?
+expect "typed-late exit" "$code" 1
+expect "typed-late still running" "$(term term_dev)" running
+expect "typed-late named" "$(grep -c '^  thr_w1 term_dev running pnpm dev 2025-09-26T00:00:00Z$' <<<"$out" || true)" 1
+expect "typed-late keeps no recovery row" "$(jq -rs '[.[] | select(.id == "term_dev")] | length' "$S/storage/pause-tree-thr_root.jsonl")" 0
+expect "typed-late clean terminal still closed" "$(term term_watch)" exited
 
 echo "# a terminal that will not close keeps the tree unsettled, is named, and keeps no recovery row"
 seed
@@ -279,6 +314,8 @@ jq -s add "$S/threads.json" "$S/extra.json" > "$S/threads.new" && mv "$S/threads
 {
 	jq '.[]' "$S/queue.json"
 	msg msg_deptell thr_dep agent thr_root cli time "Dependent brief."
+	msg msg_rootforktell thr_rootfork agent thr_root cli time "Root fork brief."
+	msg msg_forktell thr_forkkid agent thr_fork cli time "Fork kid brief."
 } | jq -s . > "$S/queue.new" && mv "$S/queue.new" "$S/queue.json"
 cat > "$S/extra.json" <<'EOF'
 [{"id":"auto_fork","projectId":"proj","enabled":true,"createdByThreadId":"thr_fork","execution":{"mode":"agent","targetThreadId":"thr_fork"}},
@@ -297,6 +334,15 @@ expect "term_fork closed" "$(term term_fork)" exited
 expect "auto_fork" "$(enabled auto_fork)" false
 expect "auto_dep paused in the dependent's project" "$(grep -c '^paused automation auto_dep in proj_dep$' <<<"$out" || true)" 1
 expect "dependent's tell saved" "$(jq -rs '[.[] | select(.id == "msg_deptell") | .content[0].text] | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "Dependent brief."
+echo "# each saved row and each stop records the route the pause took, so the resume can recover a dependent or a fork no parent link reaches"
+route() { jq -rsc --arg id "$1" '.[] | select(.id == $id) | .route | map("\(.threadId):\(.link)") | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null; }
+expect "dependent's row routed by its lifecycle link" "$(route msg_deptell)" "thr_dep:dependent"
+expect "root fork's row routed by its fork link" "$(route msg_rootforktell)" "thr_rootfork:fork"
+expect "fork kid's row routed through its fork" "$(route msg_forktell)" "thr_sub:child thr_w1:child thr_fork:fork thr_forkkid:child"
+expect "fork terminal's row routed through its fork" "$(route term_fork)" "thr_sub:child thr_w1:child thr_fork:fork"
+expect "every route ends at its row's thread, the root's rows have none" \
+	"$(jq -rs 'all(.[]; if .threadId == "thr_root" then .route == [] else .route[-1].threadId == .threadId end)' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" true
+expect "a stop names its route" "$([ "$(grep -c '^stopped thr_forkkid via thr_sub (child) > thr_w1 (child) > thr_fork (fork) > thr_forkkid (child)$' <<<"$out" || true)" -ge 1 ] && echo yes || echo no)" yes
 expect "thr_visfork untouched" "$(status thr_visfork)" active/none
 expect "thr_visfork never stopped" "$(calls "stop thr_visfork")" 0
 expect "auto_visfork untouched" "$(enabled auto_visfork)" true

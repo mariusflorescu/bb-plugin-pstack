@@ -16,23 +16,29 @@
 # and one that runs again takes another. A stop leaves a thread's terminals
 # running, so a CLI a stopped descendant started keeps writing: each pass
 # closes every live thread-scoped terminal of each stopped descendant, never
-# the thread's own. A descendant is settled once it has taken such a stop and
-# a later pass lists it idle or error with no queued work of the program and
-# no live terminal. A queued message is the program's
+# the thread's own, with `bb terminal close --if-clean`, which closes only a
+# terminal no input was ever sent to. One that took input (typed in the UI, or
+# sent with `bb terminal send`) stays open, is never force-closed, and is named
+# for the operator to decide. A descendant is settled once it has taken such a
+# stop and a later pass lists it idle or error with no queued work of the
+# program and no live terminal. A queued message is the program's
 # when a thread in this tree sent it or it is the due notice of an automation a
 # thread in this tree created. Before a message is discarded, it is saved as one
 # JSON line, one per message id, to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl
 # for the resume note, and read back. A terminal is saved the same way before it
 # is closed, as a row with "kind": "terminal" and its threadId, title and
-# initialCwd, so the resume can restart what is still needed. When a save
-# fails, the script stops there and discards or closes nothing more. Any other
+# initialCwd, so the resume can restart what is still needed. Every row carries
+# the route the pause reached its thread by, and every stop prints it, so the
+# resume can walk the same graph. When a save fails, the script stops there and
+# discards or closes nothing more. Any other
 # queued message (the user's, a retry, a system notice, another program's)
 # stays queued and its thread is never stopped. The thread itself is
 # never stopped, so such a message on it wakes only it: it is named but does
 # not fail the run. Prints what it paused (with the project to resume it in),
-# discarded, stopped, closed and left queued on the thread; exits 1 when a
-# descendant will not settle (a terminal that will not close included) or holds
-# queued messages this program did not create.
+# discarded, stopped (with its route), closed and left queued on the thread;
+# exits 1 when a descendant will not settle (a terminal that will not close
+# included), keeps a terminal that took input, or holds queued messages this
+# program did not create.
 #
 # Usage: pause-tree.sh <thread-id>
 set -u
@@ -43,9 +49,12 @@ settle="${PAUSE_TREE_SETTLE:-5}"
 root_project=$(bb thread show "$root" --json | jq -er '.thread.projectId') \
 	|| { echo "error: cannot read the project of $root" >&2; exit 1; }
 
-# Every descendant as "id<TAB>status<TAB>queuedWork<TAB>projectId", parents
-# first, each once. `bb thread list` filters by parent alone, so this reads
-# every live thread in every project and follows all three links.
+# Every descendant as "id<TAB>status<TAB>queuedWork<TAB>projectId<TAB>route",
+# parents first, each once. `bb thread list` filters by parent alone, so this
+# reads every live thread in every project and follows all three links. The
+# route is the JSON path from the thread down to the descendant, one
+# {threadId, link} per hop, the link being how that hop hangs off the one
+# before: child, dependent (lifecycle) or fork (hidden).
 tree() {
 	local all
 	all=$(bb thread list --include-hidden --json) || return 1
@@ -53,11 +62,19 @@ tree() {
 		(reduce .[] as $t ({}; reduce ([$t.parentThreadId, $t.lifecycleOwnerThreadId,
 			(if $t.visibility == "hidden" then $t.sourceThreadId else null end)]
 			| map(select(. != null)) | unique)[] as $p (.; .[$p] += [$t]))) as $kids
-		| {seen: {($root): true}, next: [$root], out: []}
+		| {seen: {($root): true}, next: [$root], route: {($root): []}, out: []}
 		| until(.next == []; .next[0] as $id | .next |= .[1:]
 			| reduce ($kids[$id] // [])[] as $k (.; if .seen[$k.id] then . else
-				.seen[$k.id] = true | .next += [$k.id] | .out += [$k] end))
-		| .out[] | [.id, .status, .queuedWork, .projectId] | @tsv' <<<"$all"
+				.seen[$k.id] = true | .next += [$k.id]
+				| .route[$k.id] = .route[$id] + [{threadId: $k.id, link: (if $k.parentThreadId == $id then "child"
+					elif $k.lifecycleOwnerThreadId == $id then "dependent" else "fork" end)}]
+				| .out += [$k + {route: .route[$k.id]}] end))
+		| .out[] | [.id, .status, .queuedWork, .projectId, (.route | tojson)] | @tsv' <<<"$all"
+}
+
+# The route tree() found to thread $1, [] for the root.
+route_of() {
+	awk -F'\t' -v id="$1" '$1 == id { r = $5 } END { print (r == "" ? "[]" : r) }' <<<"$rows"
 }
 
 # Leaves exactly one row for message or terminal $1 in $saved: the JSON row $2,
@@ -98,7 +115,7 @@ pause_automations() {
 terminals() {
 	local list
 	list=$(bb terminal list --thread "$1" --json) || return 1
-	jq -c --arg id "$1" '.sessions[] | {kind: "terminal", threadId: $id} + .' <<<"$list"
+	jq -c --arg id "$1" --argjson route "$(route_of "$1")" '.sessions[] | {kind: "terminal", threadId: $id} + . + {route: $route}' <<<"$list"
 }
 
 # Each descendant in $rows whose stop succeeded, bar those holding another program's messages.
@@ -110,8 +127,9 @@ stopped_ids() {
 }
 
 rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
-# $stopped holds each descendant whose `bb thread stop` succeeded.
-held=""; stopped=""; settled=no
+# $stopped holds each descendant whose `bb thread stop` succeeded, $kept each
+# terminal --if-clean left open because it took input, and $kept_rows its report line.
+held=""; stopped=""; kept=""; kept_rows=""; settled=no
 for pass in 1 2 3 4 5 6 7 8 9 10; do
 	tree_ids=$(printf '%s\n%s\n' "$root" "$(cut -f1 <<<"$rows")")
 	acted=no
@@ -123,7 +141,7 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 		while IFS=$'\t' read -r mid ours; do
 			[ -z "$mid" ] && continue
 			if [ "$ours" = false ]; then [ "$id" = "$root" ] || held=$(printf '%s\n%s' "$held" "$id"); continue; fi
-			row=$(jq -c --arg m "$mid" '.[] | select(.id == $m)' <<<"$queue")
+			row=$(jq -c --arg m "$mid" --argjson route "$(route_of "$id")" '.[] | select(.id == $m) | . + {route: $route}' <<<"$queue")
 			record "$mid" "$row" || { echo "error: cannot save queued message $mid on $id to $saved, so it stays queued and nothing more is discarded" >&2; exit 1; }
 			acted=yes
 			if bb thread queue delete "$id" "$mid" >/dev/null; then
@@ -149,10 +167,19 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 		while IFS= read -r term; do
 			[ -z "$term" ] && continue
 			tid=$(jq -r '.id' <<<"$term")
+			grep -qxF "$tid" <<<"$kept" && continue
 			record "$tid" "$term" || { echo "error: cannot save terminal $tid of $id to $saved, so it stays open and nothing more is closed" >&2; exit 1; }
 			acted=yes
-			if bb terminal close "$tid" >/dev/null; then
+			# --if-clean answers with the session either way: exited, or unchanged when input was sent to it.
+			closed=$(bb terminal close "$tid" --if-clean --json) || closed='{}'
+			if jq -e '.status == "exited"' <<<"$closed" >/dev/null 2>&1; then
 				echo "closed terminal $tid of $id ($(jq -r '.title' <<<"$term")) in $(jq -r '.initialCwd // "-"' <<<"$term"), saved to $saved"
+			# Someone may be working in it, so only the operator may close it: drop its row and leave it open.
+			elif jq -e '.lastUserInputAt != null' <<<"$closed" >/dev/null 2>&1; then
+				record "$tid" || { echo "error: cannot drop the row of terminal $tid of $id, which stays open, from $saved" >&2; exit 1; }
+				kept=$(printf '%s\n%s' "$kept" "$tid")
+				kept_rows=$(printf '%s\n%s' "$kept_rows" "$(jq -r --arg id "$id" '"  \($id) \(.id) \(.status) \(.title) \(.lastUserInputAt / 1000 | floor | todate)"' <<<"$closed")")
+				echo "warn: terminal $tid of $id took input, so it stays open for the operator to decide" >&2
 			# Still live, so not closed: drop its row, and the next pass retries it.
 			elif t=$(terminals "$id") && jq -e --arg t "$tid" 'select(.id == $t)' <<<"$t" >/dev/null && record "$tid"; then
 				echo "warn: cannot close terminal $tid of $id; it stays open" >&2
@@ -167,7 +194,9 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 		($2 ~ /^(pending|starting|active|stopping)$/ || !($1 in done)) && !($1 in skip) { print $1 }' <<<"$rows")
 	[ -z "$busy" ] && [ "$acted" = no ] && { settled=yes; break; }
 	for id in $busy; do
-		if bb thread stop "$id" >/dev/null; then echo "stopped $id"; stopped=$(printf '%s\n%s' "$stopped" "$id")
+		if bb thread stop "$id" >/dev/null; then
+			echo "stopped $id via $(route_of "$id" | jq -r 'map("\(.threadId) (\(.link))") | join(" > ")')"
+			stopped=$(printf '%s\n%s' "$stopped" "$id")
 		else echo "warn: bb thread stop $id failed" >&2; fi
 	done
 	sleep "$settle"
@@ -186,7 +215,7 @@ left=$(queued_rows "$root" "$(bb thread show "$root" --json | jq -r '.thread.sta
 [ -n "$left" ] && printf '%s\n%s\n' \
 	"left queued on $root, which this script never stops, so each wakes only $root (thread, status, message, initiator, sender, waiting on):" "$left"
 
-if [ "$settled" = yes ] && [ -z "$held" ]; then
+if [ "$settled" = yes ] && [ -z "$held" ] && [ -z "$kept" ]; then
 	echo "settled $(grep -c . <<<"$rows") descendants of $root after $((pass - 1)) rounds"
 	exit 0
 fi
@@ -197,11 +226,13 @@ fi
 			n = split(ENVIRON["STOPPED"], s, "\n"); for (i = 1; i <= n; i++) done[s[i]] = 1 }
 		$1 in show || ($3 != "none" && !($1 in skip)) { print "  " $1, $2, $3, (($1 in done) ? "stopped" : "never-stopped") }' <<<"$rows" >&2
 	open=$(for id in $(stopped_ids); do
-		if t=$(terminals "$id"); then jq -r '"  \(.threadId) \(.id) \(.status) \(.title)"' <<<"$t"
+		if t=$(terminals "$id"); then jq -r --arg kept "$kept" 'select(.id | IN($kept | split("\n")[]) | not) | "  \(.threadId) \(.id) \(.status) \(.title)"' <<<"$t"
 		else echo "  $id ? cannot list its terminals"; fi
 	done)
 	[ -n "$open" ] && printf '%s\n%s\n' "error: terminals still live under stopped descendants (thread, terminal, status, title):" "$open" >&2
 }
+[ -n "$kept" ] && printf '%s%s\n' \
+	"error: left open terminals that took input, which only the operator may close (thread, terminal, status, title, first input):" "$kept_rows" >&2
 [ -n "$held" ] && {
 	echo "error: left queued messages this program did not create, and never stopped their threads (thread, status, message, initiator, sender, waiting on):" >&2
 	for id in $(printf '%s\n' "$held" | sed '/^$/d' | sort -u); do
