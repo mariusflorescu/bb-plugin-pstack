@@ -90,6 +90,32 @@ test("BB CLI usage the contract rules out is flagged", () => {
   );
 });
 
+test("a skill's failure paragraph must run the provider-retry check, a script need not", () => {
+  const run = check({
+    "server.ts": 'const SKILL_NAMES = [\n  "a",\n] as const;\n',
+    "skills/a/SKILL.md": [
+      "---",
+      "name: a",
+      "description: x",
+      "---",
+      "A worker that fails lands in status `error`. For any other failure, run the provider-retry check in the pstack delegation rules first.",
+      "A worker that fails lands in status `error`. Proceed with N-1 and note it.",
+      "",
+    ].join("\n"),
+    "skills/a/scripts/wait.sh": "# a child in status error makes bb thread wait exit at once\n",
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(
+    run.stdout,
+    [
+      "a/SKILL.md:6 [retry-check] run the provider-retry check in the pstack delegation rules before counting a failed child out: A worker that fails lands in status `error`. Proceed with N-1 and note it.",
+      "",
+      "0/1 skills clean, 1 findings",
+      "",
+    ].join("\n")
+  );
+});
+
 test("in a shell script only a bb thread list call needs --include-hidden, not a comment or message naming it", () => {
   const run = check({
     "server.ts": 'const SKILL_NAMES = [\n  "a",\n] as const;\n',

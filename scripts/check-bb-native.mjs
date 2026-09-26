@@ -40,11 +40,14 @@ const RULES = [
   // A line that itself names the pinned form ("$(git rev-parse HEAD)" or origin/<branch>) already says how to pin.
   { id: "base-branch", re: /--base-branch(?!`)/, unless: /rev-parse HEAD|origin\//, hint: "pin a worktree to \"$(git rev-parse HEAD)\" after committing, or to a pushed origin/<branch>; a local branch moves" },
   { id: "provider-host", re:/bb provider (list|models)\b(?!.*--(environment|machine|host)\b)/, hint: "pass --environment \"$BB_ENVIRONMENT_ID\" or --machine; without one bb reads the server's machine" },
+  // The failure paragraph of a fan-out skill: an overloaded or rate-limited child restarts by itself.
+  { id: "retry-check", re: /\bstatus `?error\b/, unless: /provider-retry/, hint: "run the provider-retry check in the pstack delegation rules before counting a failed child out" },
 ];
 
 const TEXT = new Set([".md", ".sh", ".mjs", ".ts", ".json", ".txt", ""]);
-// Code files may legitimately say "cursor" (pagination) or talk to GitHub bots.
-const CODE_EXEMPT = new Set(["cursor-name", "origin-forge", "task-tool"]);
+// Code files may legitimately say "cursor" (pagination) or talk to GitHub bots,
+// and the failure paragraph a skill tells the agent to follow is prose.
+const CODE_EXEMPT = new Set(["cursor-name", "origin-forge", "task-tool", "retry-check"]);
 
 // A bold name is a skill reference when it carries a pstack prefix or the text
 // calls it a skill ("the **how** skill", "**a** and **b** principle skills").
