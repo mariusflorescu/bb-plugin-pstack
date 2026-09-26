@@ -85,6 +85,25 @@ function frontmatterName(text) {
   return block?.[1].match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "") ?? null;
 }
 
+// Claude Code reads disable-model-invocation and paths from SKILL.md. Codex
+// reads neither: agents/openai.yaml stands in for the first, and the injected
+// rules for the second. Claude Code never path-loads a skill that also sets
+// disable-model-invocation, so the two cannot be combined.
+function invocationFindings(name, text) {
+  const block = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+  const userOnly = /^disable-model-invocation:\s*true\s*$/m.test(block);
+  const policy = join(SKILLS, name, "agents", "openai.yaml");
+  const hiddenFromCodex = existsSync(policy) && /^\s+allow_implicit_invocation:\s*false\s*$/m.test(readFileSync(policy, "utf8"));
+  const findings = [];
+  if (userOnly !== hiddenFromCodex) {
+    findings.push(`${name}/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs`);
+  }
+  if (userOnly && /^paths:/m.test(block)) {
+    findings.push(`${name}/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)`);
+  }
+  return findings;
+}
+
 function relativeTargets(text) {
   const targets = [];
   for (const m of text.matchAll(/\]\(([^)\s#]+)(#[^)]*)?\)/g)) targets.push(m[1]);
@@ -98,8 +117,10 @@ function checkSkill(name) {
   const skillMd = join(dir, "SKILL.md");
   if (!existsSync(skillMd)) return [`${name}: missing SKILL.md`];
 
-  const fm = frontmatterName(readFileSync(skillMd, "utf8"));
+  const skillText = readFileSync(skillMd, "utf8");
+  const fm = frontmatterName(skillText);
   if (fm !== name) findings.push(`${name}/SKILL.md: frontmatter name "${fm}" must equal the directory name`);
+  for (const finding of invocationFindings(name, skillText)) findings.push(finding);
 
   for (const file of walk(dir)) {
     if (!TEXT.has(extname(file))) continue;

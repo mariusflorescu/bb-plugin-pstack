@@ -139,3 +139,30 @@ test("in a shell script only a bb thread list call needs --include-hidden, not a
     ].join("\n")
   );
 });
+
+test("Codex's policy file must match disable-model-invocation, and paths cannot be user-only", () => {
+  const policy = "policy:\n  allow_implicit_invocation: false\n";
+  const run = check({
+    "server.ts": 'const SKILL_NAMES = [\n  "hidden",\n  "leaky",\n  "orphan",\n  "pathy",\n  "stuck",\n] as const;\n',
+    "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true\n---\n",
+    "skills/hidden/agents/openai.yaml": policy,
+    "skills/leaky/SKILL.md": "---\nname: leaky\ndescription: x\ndisable-model-invocation: true\n---\n",
+    "skills/orphan/SKILL.md": "---\nname: orphan\ndescription: x\n---\n",
+    "skills/orphan/agents/openai.yaml": policy,
+    "skills/pathy/SKILL.md": '---\nname: pathy\ndescription: x\npaths: ["**/*.ts"]\n---\n',
+    "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths: ["**/*.ts"]\ndisable-model-invocation: true\n---\n',
+    "skills/stuck/agents/openai.yaml": policy,
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(
+    run.stdout,
+    [
+      "leaky/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+      "orphan/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+      "stuck/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)",
+      "",
+      "2/5 skills clean, 3 findings",
+      "",
+    ].join("\n")
+  );
+});
