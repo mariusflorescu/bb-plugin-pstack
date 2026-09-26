@@ -70,6 +70,7 @@ test("BB CLI usage the contract rules out is flagged", () => {
       "Stack it with `--new-environment worktree --base-branch <parent branch>`.",
       "Pass `--base-branch <ref>`; a worker on another machine needs a pushed branch, `origin/<branch>`.",
       "Give it `--base-branch <baseline>`, resolved once with `git rev-parse HEAD`.",
+      'Fetch the PR head, then spawn with `--base-branch "$(git rev-parse FETCH_HEAD)"`.',
       "",
     ].join("\n"),
   });
