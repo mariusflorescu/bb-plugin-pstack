@@ -67,7 +67,7 @@ Use the Sentry MCP.
    analyze_issue_with_seer
    ```
 
-   Seer produces AI root-cause analyses. Useful as a hypothesis generator, but treat them as inference, not authoritative. The actual events and stack traces are the primary evidence. Seer's narrative is secondary.
+   Seer produces AI root-cause analyses. Useful as a hypothesis generator, but treat them as inference, not authoritative. The actual events and stack traces are the primary evidence. Seer's narrative is secondary. Read an analysis that already exists. When the issue has none, `analyze_issue_with_seer` starts a new Autofix run in Sentry, which is an external write this read-only investigation must not make: record the gap instead, unless the user asked for a Seer run.
 
 ## What good evidence looks like here
 
