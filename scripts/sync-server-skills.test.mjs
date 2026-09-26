@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT = fileURLToPath(new URL("./sync-server-skills.mjs", import.meta.url));
+const FRONTMATTER = fileURLToPath(new URL("./frontmatter.mjs", import.meta.url));
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 
 function tree(files) {
@@ -19,6 +20,7 @@ function tree(files) {
   }
   mkdirSync(join(root, "scripts"));
   copyFileSync(SCRIPT, join(root, "scripts/sync-server-skills.mjs"));
+  copyFileSync(FRONTMATTER, join(root, "scripts/frontmatter.mjs"));
   return root;
 }
 
@@ -78,31 +80,61 @@ test("a description with replacement syntax such as $& is written literally", ()
   );
 });
 
-test("SKILL_PATHS takes paths as a flow list, a block list or a comma-separated string", () => {
+test("SKILL_PATHS takes every list form and keeps brace globs whole", () => {
   const { run, server } = sync({
     "server.ts": SERVER,
-    "skills/flow/SKILL.md": '---\nname: flow\ndescription: x\npaths: ["**/*.ts", "**/*.tsx"]\n---\n',
+    "skills/flow/SKILL.md": '---\nname: flow\ndescription: x\npaths: ["**/*.{ts,tsx}", "**/*.md"]\n---\n',
+    "skills/lines/SKILL.md": '---\nname: lines\ndescription: x\npaths: [\n  "**/*.py",\n  "**/*.pyi",\n]\n---\n',
     "skills/block/SKILL.md": "---\nname: block\ndescription: x\npaths:\n  - \"**/migrations/**\"\n  - '*.sql'\n---\n",
     "skills/comma/SKILL.md": "---\nname: comma\ndescription: x\npaths: src/**/*.rs, *.toml\n---\n",
     "skills/none/SKILL.md": "---\nname: none\ndescription: x\n---\n",
   });
   assert.equal(run.status, 0, run.stderr);
-  assert.match(
-    server,
-    /const SKILL_PATHS: Partial<Record<SkillName, readonly string\[\]>> = \{\n {2}"block": \["\*\*\/migrations\/\*\*", "\*\.sql"\],\n {2}"comma": \["src\/\*\*\/\*\.rs", "\*\.toml"\],\n {2}"flow": \["\*\*\/\*\.ts", "\*\*\/\*\.tsx"\],\n\};\n$/
+  assert.ok(
+    server.endsWith(
+      [
+        "const SKILL_PATHS: Partial<Record<SkillName, readonly string[]>> = {",
+        '  "block": ["**/migrations/**", "*.sql"],',
+        '  "comma": ["src/**/*.rs", "*.toml"],',
+        '  "flow": ["**/*.{ts,tsx}", "**/*.md"],',
+        '  "lines": ["**/*.py", "**/*.pyi"],',
+        "};",
+        "",
+      ].join("\n")
+    ),
+    server
   );
 });
 
-test("a user-only skill gets the Codex policy file, and loses it when the flag goes", () => {
+test("a user-only skill gets the Codex policy file, comment or not, and loses it when the flag goes", () => {
   const root = tree({
     "server.ts": SERVER,
-    "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true\n---\n",
+    "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true # explicit only\n---\n",
+    "skills/hidden/agents/openai.yaml": POLICY,
+    "skills/new/SKILL.md": "---\nname: new\ndescription: x\ndisable-model-invocation: true\n---\n",
     "skills/shown/SKILL.md": "---\nname: shown\ndescription: x\n---\n",
     "skills/shown/agents/openai.yaml": POLICY,
   });
   assert.equal(run(root).status, 0);
   assert.equal(readFileSync(join(root, "skills/hidden/agents/openai.yaml"), "utf8"), POLICY);
+  assert.equal(readFileSync(join(root, "skills/new/agents/openai.yaml"), "utf8"), POLICY);
   assert.equal(existsSync(join(root, "skills/shown/agents")), false);
+});
+
+test("a skill upstream deleted loses its generated policy file and its empty directory", () => {
+  const root = tree({
+    "server.ts": SERVER,
+    "skills/kept/SKILL.md": "---\nname: kept\ndescription: x\n---\n",
+    "skills/gone/agents/openai.yaml": POLICY,
+    "skills/custom/agents/openai.yaml": "interface:\n  display_name: Custom\n",
+  });
+  const stale = run(root, "--check");
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /^out of date: skills\/gone\/agents\/openai\.yaml$/m);
+  assert.equal(run(root).status, 0);
+  assert.equal(existsSync(join(root, "skills/gone")), false);
+  assert.equal(existsSync(join(root, "skills/custom/agents/openai.yaml")), true);
+  assert.equal(run(root, "--check").status, 0);
 });
 
 test("--check writes nothing and exits 1 while anything is out of date", () => {

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const plugin = (await import("../server.ts")).default;
+const { default: plugin, delegationRules } = await import("../server.ts");
 
 const PARENTS = { "claude-code": "claude-opus-5-5", codex: "gpt-6-astra" };
 
@@ -60,4 +60,24 @@ test("a provider that ignores paths frontmatter is told to load the skill for ma
 test("a switched-off skill gets no paths line", async () => {
   const text = await instructions("", { provider: "codex", off: ["typescript-best-practices"] });
   assert.equal(text.includes("Before you read or edit"), false);
+});
+
+test("path lines too long to fit give way to one fixed sentence before the role models do, and nothing passes the limit", () => {
+  const many = Array.from({ length: 40 }, (_, i) => [`path-skill-${i}`, [`**/*.ext${i}`, `src/**/*.{a${i},b${i}}`]]);
+  const panel = Array.from({ length: 24 }, () => "claude-code / claude-fable-5-1 @xhigh").join(", ");
+  const long = `arena runners: ${panel}\narchitect runners: ${panel}\ninterrogate reviewers: ${panel}\n`;
+
+  const roomy = delegationRules("codex", "gpt-6-astra", "", many);
+  assert.ok(roomy.length <= 4096, `${roomy.length} characters`);
+  assert.equal(roomy.includes("path-skill-0"), false);
+  assert.match(roomy, /load each of them whose globs match it\.\n\nRole models \(provider \/ model @effort\):\n/);
+
+  const tight = delegationRules("codex", "gpt-6-astra", long, many);
+  assert.ok(tight.length <= 4096, `${tight.length} characters`);
+  assert.match(tight, /load each of them whose globs match it\.\n\nThe role models are too long to inline here\. Run bb plugin config pstack --json\./);
+
+  const few = delegationRules("codex", "gpt-6-astra", long, many.slice(0, 1));
+  assert.ok(few.includes("load the path-skill-0 skill.\n\nThe role models are too long"), few.slice(-600));
+
+  assert.equal(delegationRules("claude-code", "claude-opus-5-5", "", many).includes("Before you read or edit"), false);
 });

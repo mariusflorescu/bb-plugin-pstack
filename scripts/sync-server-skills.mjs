@@ -7,6 +7,7 @@
 import { readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, rmSync, rmdirSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { frontmatterBlock, description, isUserOnly, paths as pathsOf } from "./frontmatter.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS = join(ROOT, "skills");
@@ -20,73 +21,20 @@ policy:
   allow_implicit_invocation: false
 `;
 
-function parseDoubleQuoted(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw.slice(1, -1).replace(/\\"/g, '"');
-  }
-}
-
-const unquote = (raw) => (raw.startsWith('"') ? parseDoubleQuoted(raw) : raw.replace(/^'(.*)'$/, "$1").replace(/''/g, "'"));
-
-// A block scalar (`>-`, `|` and the like) keeps its text on the indented lines
-// below the key. Folding every line break to a space is enough for a summary.
-function descriptionValue(frontmatter) {
-  const lines = frontmatter.split("\n");
-  const at = lines.findIndex((line) => line.startsWith("description:"));
-  if (at === -1) return "";
-  const raw = lines[at].slice("description:".length).trim();
-  if (/^[>|][+-]?$/.test(raw)) {
-    const body = [];
-    for (const line of lines.slice(at + 1)) {
-      if (line.trim() !== "" && !/^\s/.test(line)) break;
-      body.push(line.trim());
-    }
-    return body.join(" ").replace(/\s+/g, " ").trim();
-  }
-  return unquote(raw);
-}
-
-// `paths` as Claude Code reads it: a YAML list (flow or block) or a
-// comma-separated string.
-function pathsValue(frontmatter) {
-  const lines = frontmatter.split("\n");
-  const at = lines.findIndex((line) => line.startsWith("paths:"));
-  if (at === -1) return [];
-  const raw = lines[at].slice("paths:".length).trim();
-  if (raw === "") {
-    const items = [];
-    for (const line of lines.slice(at + 1)) {
-      const item = line.match(/^\s+-\s+(.+)$/);
-      if (!item) break;
-      items.push(unquote(item[1].trim()));
-    }
-    return items;
-  }
-  const list = raw.startsWith("[") && raw.endsWith("]") ? raw.slice(1, -1) : unquote(raw);
-  return list.split(",").map((item) => unquote(item.trim())).filter(Boolean);
-}
-
-function frontmatter(name) {
-  return readFileSync(join(SKILLS, name, "SKILL.md"), "utf8").match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
-}
-
 function summary(fm) {
-  const value = descriptionValue(fm);
+  const value = description(fm);
   const first = value.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? value;
   return first.length > MAX ? first.slice(0, MAX - 3).trimEnd() + "..." : first;
 }
 
-const names = readdirSync(SKILLS)
-  .filter((d) => !d.startsWith(".") && statSync(join(SKILLS, d)).isDirectory() && existsSync(join(SKILLS, d, "SKILL.md")))
-  .sort();
-const fms = new Map(names.map((n) => [n, frontmatter(n)]));
+const dirs = readdirSync(SKILLS).filter((d) => !d.startsWith(".") && statSync(join(SKILLS, d)).isDirectory()).sort();
+const names = dirs.filter((d) => existsSync(join(SKILLS, d, "SKILL.md")));
+const fms = new Map(names.map((n) => [n, frontmatterBlock(readFileSync(join(SKILLS, n, "SKILL.md"), "utf8"))]));
 
 const list = names.map((n) => `  ${JSON.stringify(n)},`).join("\n");
 const summaries = names.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(summary(fms.get(n)))},`).join("\n");
 const paths = names
-  .map((n) => [n, pathsValue(fms.get(n))])
+  .map((n) => [n, pathsOf(fms.get(n))])
   .filter(([, globs]) => globs.length > 0)
   .map(([n, globs]) => `  ${JSON.stringify(n)}: [${globs.map((g) => JSON.stringify(g)).join(", ")}],`)
   .join("\n");
@@ -112,11 +60,13 @@ for (const [pattern, replacement] of BLOCKS) {
 }
 const stale = next === src ? [] : ["server.ts"];
 
+// A directory whose SKILL.md is gone (upstream deleted the skill) loses the
+// policy file this script wrote; a hand-written file is left for the checker.
 const policyWrites = [];
-for (const n of names) {
-  const file = join(SKILLS, n, "agents", "openai.yaml");
-  const wanted = /^disable-model-invocation:\s*true\s*$/m.test(fms.get(n)) ? CODEX_POLICY : null;
+for (const d of dirs) {
+  const file = join(SKILLS, d, "agents", "openai.yaml");
   const actual = existsSync(file) ? readFileSync(file, "utf8") : null;
+  const wanted = fms.has(d) ? (isUserOnly(fms.get(d)) ? CODEX_POLICY : null) : actual === CODEX_POLICY ? null : actual;
   if (wanted === actual) continue;
   stale.push(relative(ROOT, file));
   policyWrites.push([file, wanted]);
@@ -128,11 +78,14 @@ if (CHECK) {
   process.exit(stale.length ? 1 : 0);
 }
 
+const removeIfEmpty = (dir) => existsSync(dir) && readdirSync(dir).length === 0 && rmdirSync(dir);
+
 if (next !== src) writeFileSync(SERVER, next);
 for (const [file, wanted] of policyWrites) {
   if (wanted === null) {
     rmSync(file);
-    if (readdirSync(dirname(file)).length === 0) rmdirSync(dirname(file));
+    removeIfEmpty(dirname(file));
+    removeIfEmpty(dirname(dirname(file)));
   } else {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, wanted);

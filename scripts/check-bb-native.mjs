@@ -6,6 +6,7 @@
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, dirname, resolve, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { frontmatterBlock, isUserOnly, paths } from "./frontmatter.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS = join(ROOT, "skills");
@@ -90,15 +91,15 @@ function frontmatterName(text) {
 // rules for the second. Claude Code never path-loads a skill that also sets
 // disable-model-invocation, so the two cannot be combined.
 function invocationFindings(name, text) {
-  const block = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
-  const userOnly = /^disable-model-invocation:\s*true\s*$/m.test(block);
+  const block = frontmatterBlock(text);
+  const userOnly = isUserOnly(block);
   const policy = join(SKILLS, name, "agents", "openai.yaml");
   const hiddenFromCodex = existsSync(policy) && /^\s+allow_implicit_invocation:\s*false\s*$/m.test(readFileSync(policy, "utf8"));
   const findings = [];
   if (userOnly !== hiddenFromCodex) {
     findings.push(`${name}/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs`);
   }
-  if (userOnly && /^paths:/m.test(block)) {
+  if (userOnly && paths(block).length > 0) {
     findings.push(`${name}/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)`);
   }
   return findings;

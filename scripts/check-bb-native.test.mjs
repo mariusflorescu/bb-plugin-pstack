@@ -7,14 +7,14 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT = fileURLToPath(new URL("./check-bb-native.mjs", import.meta.url));
+const SCRIPTS = fileURLToPath(new URL(".", import.meta.url));
 
 function check(files) {
   const root = mkdtempSync(join(tmpdir(), "check-bb-native test with spaces-"));
   after(() => rmSync(root, { recursive: true, force: true }));
-  for (const [path, text] of Object.entries({ "scripts/check-bb-native.mjs": null, ...files })) {
+  for (const [path, text] of Object.entries({ "scripts/check-bb-native.mjs": null, "scripts/frontmatter.mjs": null, ...files })) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
-    if (text === null) copyFileSync(SCRIPT, join(root, path));
+    if (text === null) copyFileSync(join(SCRIPTS, path.slice("scripts/".length)), join(root, path));
     else writeFileSync(join(root, path), text);
   }
   return spawnSync("node", ["scripts/check-bb-native.mjs"], { cwd: root, encoding: "utf8" });
@@ -146,11 +146,11 @@ test("Codex's policy file must match disable-model-invocation, and paths cannot 
     "server.ts": 'const SKILL_NAMES = [\n  "hidden",\n  "leaky",\n  "orphan",\n  "pathy",\n  "stuck",\n] as const;\n',
     "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true\n---\n",
     "skills/hidden/agents/openai.yaml": policy,
-    "skills/leaky/SKILL.md": "---\nname: leaky\ndescription: x\ndisable-model-invocation: true\n---\n",
+    "skills/leaky/SKILL.md": "---\nname: leaky\ndescription: x\ndisable-model-invocation: true # explicit only\n---\n",
     "skills/orphan/SKILL.md": "---\nname: orphan\ndescription: x\n---\n",
     "skills/orphan/agents/openai.yaml": policy,
     "skills/pathy/SKILL.md": '---\nname: pathy\ndescription: x\npaths: ["**/*.ts"]\n---\n',
-    "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths: ["**/*.ts"]\ndisable-model-invocation: true\n---\n',
+    "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths:\n  - "**/*.ts"\ndisable-model-invocation: true\n---\n',
     "skills/stuck/agents/openai.yaml": policy,
   });
   assert.equal(run.status, 1, run.stderr);

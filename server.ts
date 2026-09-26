@@ -173,17 +173,20 @@ function roleModels(setting: string, parent: string): string {
     .join("\n");
 }
 
-function pathRules(providerId: string, enabled: readonly SkillName[]): string {
-  if (NATIVE_PATHS_PROVIDERS.has(providerId)) return "";
-  return enabled
-    .flatMap((name) => {
-      const globs = SKILL_PATHS[name];
-      return globs ? [`Before you read or edit a file matching ${globs.map((glob) => `\`${glob}\``).join(" or ")}, load the ${name} skill.\n\n`] : [];
-    })
+// An enabled skill and the file globs that load it.
+type PathSkill = readonly [name: string, globs: readonly string[]];
+
+function pathLines(skills: readonly PathSkill[]): string {
+  return skills
+    .map(([name, globs]) => `Before you read or edit a file matching ${globs.map((glob) => `\`${glob}\``).join(" or ")}, load the ${name} skill.\n\n`)
     .join("");
 }
 
-function rules(providerId: string, model: string, enabled: readonly SkillName[], roleSection: string): string {
+// Fixed length, for when one line per skill does not fit.
+const PATH_POINTER =
+  "Some pstack skills list file globs under `paths` in their SKILL.md frontmatter. Before you read or edit a file, load each of them whose globs match it.\n\n";
+
+function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   return `## pstack delegation rules
 
@@ -201,20 +204,20 @@ Children also report back to this thread. Follow up with bb thread tell <id>. Fo
 
 pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 
-${pathRules(providerId, enabled)}${roleSection}`;
+${pathSection}${roleSection}`;
 }
 
-// The block every thread receives. A mapping too long to fit whole is replaced
-// by where to read it, so BB's truncation never cuts an entry in half.
-function delegationRules(providerId: string, model: string, setting: string, enabled: readonly SkillName[]): string {
-  const inline = rules(providerId, model, enabled, `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`);
-  if (inline.length <= INSTRUCTIONS_LIMIT) return inline;
-  return rules(
-    providerId,
-    model,
-    enabled,
-    `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`
-  );
+// The block every thread receives. What does not fit whole is replaced by
+// where to read it, role models last, so BB's truncation never cuts an entry
+// in half. A provider that reads `paths` itself gets no path lines.
+export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[]): string {
+  const pathSections = NATIVE_PATHS_PROVIDERS.has(providerId) || pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
+  const roleSections = [
+    `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`,
+    `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`,
+  ];
+  const candidates = roleSections.flatMap((roles) => pathSections.map((paths) => rules(providerId, model, paths, roles)));
+  return candidates.find((text) => text.length <= INSTRUCTIONS_LIMIT) ?? candidates[candidates.length - 1];
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -254,6 +257,10 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.configure((context) => {
     if (current.skills !== true) return { tools: [], skills: [] };
     const enabled = SKILL_NAMES.filter((name) => current[name] === true);
+    const pathSkills = enabled.flatMap((name): PathSkill[] => {
+      const globs = SKILL_PATHS[name];
+      return globs ? [[name, globs]] : [];
+    });
     return {
       tools: [],
       skills: enabled,
@@ -261,7 +268,7 @@ export default async function plugin(bb: BbPluginApi) {
         context.provider.id,
         context.provider.model,
         typeof current.models === "string" ? current.models : "",
-        enabled
+        pathSkills
       ),
     };
   });
