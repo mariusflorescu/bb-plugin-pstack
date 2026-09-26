@@ -23,7 +23,8 @@ wt() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && echo "$1" > "
 wt_at_main() { git worktree add -q -b "$1" "$S/wt-$1"; }
 wt merged && git merge -q --ff-only merged && git push -q origin main
 for name in wip inuse running child recent; do wt "$name"; done
-for name in hidden parent leaf new renamed staged byname byslash bytilde kid; do wt_at_main "$name"; done
+for name in hidden parent leaf new renamed staged byname byslash bytilde kid nested nestpin gonesub sib byproj bymain; do wt_at_main "$name"; done
+mkdir -p "$S/wt-nested/scripts" "$S/wt-nestpin/packages/app" "$S/wt-sib-x" "$S/repo/tools"
 git worktree add -q -b spaced "$S/wt-sp ace"
 ln -s "$S" "$S.link"
 git worktree add -q --detach "$S/wt-detached" && (cd "$S/wt-detached" && echo d > d.txt && git add . && git commit -qm detached)
@@ -41,6 +42,9 @@ envrow() { printf '{"id":"env_%s","projectId":"%s","hostId":"%s","path":"%s"}' "
 	printf '[%s' "$(envrow far "$S/wt-merged" proj_far host_far)"
 	printf ',%s' "$(envrow main "$S/repo")" "$(envrow far2 "$S/elsewhere" proj_far)"
 	for name in merged inuse running child recent hidden parent leaf kid; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
+	# Attached below a worktree's root, one of them at a directory since deleted.
+	printf ',%s' "$(envrow nested "$S/wt-nested/scripts")" "$(envrow nestpin "$S/wt-nestpin/packages/app" proj_nest)" \
+		"$(envrow gonesub "$S/wt-gonesub/dist/")" "$(envrow sibx "$S/wt-sib-x")" "$(envrow tools "$S/repo/tools" proj_tools)"
 	printf ']\n'
 } > "$S/stub/envs.json"
 thread() { # id env status pinnedAt parent updatedAt [visibility] [source] [project]
@@ -63,7 +67,12 @@ thread() { # id env status pinnedAt parent updatedAt [visibility] [source] [proj
 		"$(thread thr_kid env_kid idle null '"thr_self"' "$old")" \
 		"$(thread thr_m env_main idle "$old" null "$old")" \
 		"$(thread thr_x env_main active null null "$old")" \
-		"$(thread thr_q env_far2 active null null "$old" visible null proj_far)"
+		"$(thread thr_q env_far2 active null null "$old" visible null proj_far)" \
+		"$(thread thr_n env_nested active null null "$old")" \
+		"$(thread thr_np env_nestpin idle "$old" null "$old" visible null proj_nest)" \
+		"$(thread thr_g env_gonesub active null null "$old")" \
+		"$(thread thr_s env_sibx active null null "$old")" \
+		"$(thread thr_t env_tools idle null null "$old" visible null proj_tools)"
 	printf ']\n'
 } > "$S/stub/threads.json"
 jq -c --argjson t "$old" '.[] | select(.id == "thr_p") | .id = "thr_mid" | .environmentId = "env_gone" | .parentThreadId = "thr_p" | .archivedAt = $t' \
@@ -73,6 +82,8 @@ jq -n --arg link "cat $S.link/wt-byname/src/x.ts" --arg slash "ls $S//wt-byslash
 	'[$link, $slash, $tilde, $space | {data: {command: .}}]' > "$S/stub/logs/thr_m.json"
 echo "[{\"data\":{\"command\":\"ls $S/wt-merged-copy/\"}}]" > "$S/stub/logs/thr_x.json"
 echo "[{\"data\":{\"command\":\"ls $S/wt-merged/\"}}]" > "$S/stub/logs/thr_q.json"
+echo "[{\"data\":{\"command\":\"cat $S/wt-byproj/src/y.ts\"}}]" > "$S/stub/logs/thr_np.json"
+echo "[{\"data\":{\"command\":\"cat $S/wt-bymain/src/z.ts\"}}]" > "$S/stub/logs/thr_t.json"
 echo "[{\"data\":{\"text\":\"$(ls -d "$S"/wt-* | grep -v /wt-merged | tr '\n' ' ')\"}}]" > "$S/stub/logs/thr_self.json"
 
 cat > "$S/stub/gh" <<'EOF'
@@ -145,6 +156,15 @@ check "$out" bytilde MENTIONS=thr_m BUCKET=hold-in-use
 check "$out" "sp ace" MENTIONS=thr_m BUCKET=hold-in-use
 assert "never reads another project's log" '! grep -qx thr_q "$S/stub/logs-read" 2>/dev/null'
 assert "never reads its own log" '! grep -qx thr_self "$S/stub/logs-read" 2>/dev/null'
+
+echo "# a thread attached below a worktree's root holds it, and its project's logs are scanned"
+check "$out" nested ENV=env_nested "LAST_THREAD=*,running" BUCKET=hold-in-use
+check "$out" nestpin ENV=env_nestpin "LAST_THREAD=*,pinned" BUCKET=hold-in-use
+check "$out" gonesub ENV=env_gonesub "LAST_THREAD=*,running" BUCKET=hold-in-use
+check "$out" sib ENV=- LAST_THREAD=- BUCKET=safe
+check "$out" byproj MENTIONS=thr_np BUCKET=hold-in-use
+check "$out" bymain MENTIONS=thr_t
+assert "reads the logs of a project attached below the main worktree" 'grep -qx thr_t "$S/stub/logs-read" 2>/dev/null'
 
 echo "# the auditing thread holds the worktree it works in, not its children's"
 check "$out" kid "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=safe

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Read-only worktree prune audit. Classifies every git worktree by size, merge
 # state, work that removal would lose and a hash of it, remote/PR state, and BB
-# usage: the BB environments at its path on this machine, the threads in them or in this
-# repo's projects whose logs name the path, whether any of those or an ancestor
-# is pinned or running, and which other environments archiving its threads
-# would cascade into. Emits a table sorted by size with a suggested bucket.
+# usage: the BB environments at or inside its path on this machine, the threads
+# in them or in this repo's projects whose logs name the path, whether any of
+# those or an ancestor is pinned or running, and which other environments
+# archiving its threads would cascade into. Emits a table sorted by size with a suggested bucket.
 # Never deletes anything; deletion stays a human-gated step in the playbook.
 # BB state it cannot read makes every row hold-unknown, never safe.
 #
@@ -19,7 +19,18 @@ cd "$repo" || exit 1
 [ $# -gt 0 ] && shift
 
 list_worktrees() { git worktree list --porcelain | awk '/^worktree /{sub(/^worktree /, ""); print}'; }
-canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
+# A path in the form git lists worktrees in: absolute, symlinks resolved at its
+# longest existing prefix (so /tmp and /private/tmp compare equal even below a
+# deleted directory), and no doubled or trailing slash.
+canonical() {
+	local p="$1" rest="" dir
+	[ "${p#/}" = "$p" ] && p="$PWD/$p"
+	p=$(printf '%s\n' "$p" | sed -e 's#//*#/#g' -e 's#\(.\)/$#\1#')
+	while [ -n "$p" ] && [ ! -d "$p" ]; do rest="/${p##*/}$rest"; p="${p%/*}"; done
+	dir=$(cd -P "${p:-/}" 2>/dev/null && pwd -P) || { printf '%s\n' "$1"; return; }
+	dir="${dir%/}$rest"
+	printf '%s\n' "${dir:-/}"
+}
 
 # Every absolute path on stdin, resolved through symlinks at its longest
 # existing prefix, so /var and /private/var or a symlinked parent compare equal.
@@ -104,14 +115,19 @@ if [ "$bb_known" = yes ]; then
 		[ -n "$path" ] && printf '%s\t%s\t%s\n' "$id" "$(canonical "$path")" "$path"
 	done)
 	canon=$(jq -Rn '[inputs | select(. != "") | split("\t") | {(.[0]): .[1]}] | add // {}' <<<"$env_paths")
+	# A thread can attach to any directory, so an environment inside a worktree
+	# works in that worktree as much as one at its root.
+	within='def within($p): . == $p or startswith($p + "/");'
 
 	# A thread can work in a worktree by path from another environment, so scan
-	# the logs of the projects that own this repo's environments. Never this
-	# thread, whose own output names every path.
+	# the logs of the projects that own this repo's environments, those attached
+	# to a directory inside a worktree too. Never this thread, whose own output
+	# names every path.
 	projects=$(jq -r --arg main "$main_wt" --arg wts "$all_wts" --arg project "${BB_PROJECT_ID:-}" \
-		--argjson canon "$canon" \
-		'(($wts | split("\n")) + [$main]) as $repo
-		| [.[] | select($canon[.id] | IN($repo[])) | .projectId] + [$project] | map(select(. != "")) | unique | join(" ")' <<<"$envs")
+		--argjson canon "$canon" "$within"'
+		(($wts | split("\n")) + [$main] | map(select(. != ""))) as $repo
+		| [.[] | select(($canon[.id] // "") as $c | any($repo[]; . as $r | $c | within($r))) | .projectId]
+		+ [$project] | map(select(. != "")) | unique | join(" ")' <<<"$envs")
 	patterns=$(while read -r wt; do
 		[ -z "$wt" ] && continue
 		{ echo "$wt"; echo "${wt#/private}"; awk -F'\t' -v p="$wt" '$2 == p { print $3 }' <<<"$env_paths"; } | sed 's#//*#/#g' | sort -u |
@@ -127,7 +143,8 @@ if [ "$bb_known" = yes ]; then
 fi
 
 if [ "$bb_known" = yes ]; then
-	# One row per worktree path: its environments, the newest activity of the
+	# One row per worktree path: its environments, at the path or inside it (so
+	# a worktree nested in another counts for both), the newest activity of the
 	# threads using it (BB's millisecond updatedAt, kept whole so a recheck
 	# sees activity later the same day), how many of those have a pinned or
 	# running thread in their ancestry, the environments outside this path
@@ -138,7 +155,7 @@ if [ "$bb_known" = yes ]; then
 	# because it runs the audit, so it holds the worktree it works in but not
 	# the worktrees of its descendants.
 	usage=$(jq -rn --arg wts "$wts" --arg mentions "$mentions" --arg self "${BB_THREAD_ID:-}" --argjson canon "$canon" \
-		--argjson live "$live" --argjson archived "$archived" '
+		--argjson live "$live" --argjson archived "$archived" "$within"'
 		def running: (.status | IN("pending", "starting", "active", "stopping"))
 			or ((.queuedWork // "none") != "none")
 			or (([(.activity // {})[]] | add // 0) > 0);
@@ -152,7 +169,7 @@ if [ "$bb_known" = yes ]; then
 		def cascade: limit(100000; recurse($kids[.id][]? | $by[.] // empty));
 		(reduce ($mentions | split("\n")[] | select(. != "") | split("\t")) as $m ({}; .[$m[0]] += [$m[1]])) as $named
 		| $wts | split("\n")[] | select(. != "") as $wt
-		| [$canon | to_entries[] | select(.value == $wt) | .key] as $envs
+		| [$canon | to_entries[] | select(.value | within($wt)) | .key] as $envs
 		| [$live[] | select(.environmentId | IN($envs[]))] as $roots
 		| [$roots[] | cascade | select(.archivedAt == null and (.environmentId | IN($envs[]) | not))] as $outside
 		| ($roots + [($named[$wt] // [])[] | $by[.] // empty] | unique_by(.id)) as $users

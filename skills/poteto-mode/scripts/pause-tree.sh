@@ -9,10 +9,12 @@
 # created on the thread and every descendant, and stops what still runs, until
 # one pass finds every descendant settled. A queued message is the program's
 # when a thread in this tree sent it or it is the due notice of an automation a
-# thread in this tree created. Each discarded message is appended as one JSON
-# line to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl for the resume note.
-# Any other queued message (the user's, a retry, a system notice, another
-# program's) stays queued and its thread is never stopped. The thread itself is
+# thread in this tree created. Before a message is discarded, it is saved as one
+# JSON line, one per message id, to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl
+# for the resume note, and read back. When that save fails, the script stops
+# there and discards nothing more. Any other queued message (the user's, a
+# retry, a system notice, another program's) stays queued and its thread is
+# never stopped. The thread itself is
 # never stopped, so such a message on it wakes only it: it is named but does
 # not fail the run. Prints what it paused (with the project to resume it in),
 # discarded, stopped and left queued on the thread; exits 1 when a descendant
@@ -33,6 +35,19 @@ tree() {
 	kids=$(bb thread list --parent-thread "$1" --include-hidden --json) || return 1
 	jq -r '.[] | [.id, .status, .queuedWork, .projectId] | @tsv' <<<"$kids" || return 1
 	for id in $(jq -r '.[].id' <<<"$kids"); do tree "$id" || return 1; done
+}
+
+# Leaves exactly one row for message $1 in $saved: the JSON row $2, or none when
+# $2 is empty. It writes a temp file and renames it over $saved, so a failed
+# write leaves the old file intact. Then it reads $saved back and fails unless
+# the row there matches.
+record() {
+	local tmp="$saved.tmp.$$"
+	{ [ ! -e "$saved" ] || jq -c --arg m "$1" 'select(.id != $m)' "$saved"; } > "$tmp" \
+		&& { [ -z "${2:-}" ] || printf '%s\n' "$2" >> "$tmp"; } \
+		&& mv -f "$tmp" "$saved" \
+		&& jq -en --arg m "$1" --slurpfile s "$saved" '[$s[] | select(.id == $m)] == [inputs]' <<<"${2:-}" >/dev/null \
+		|| { rm -f "$tmp"; return 1; }
 }
 
 # Pauses every enabled automation aimed at a thread of the tree, in the root's
@@ -68,10 +83,16 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 			[ -z "$mid" ] && continue
 			if [ "$ours" = false ]; then [ "$id" = "$root" ] || held=$(printf '%s\n%s' "$held" "$id"); continue; fi
 			row=$(jq -c --arg m "$mid" '.[] | select(.id == $m)' <<<"$queue")
-			bb thread queue delete "$id" "$mid" >/dev/null || { echo "warn: cannot discard $mid on $id" >&2; acted=yes; continue; }
-			printf '%s\n' "$row" >> "$saved"
-			echo "discarded queued message $mid on $id, saved to $saved"
+			record "$mid" "$row" || { echo "error: cannot save queued message $mid on $id to $saved, so it stays queued and nothing more is discarded" >&2; exit 1; }
 			acted=yes
+			if bb thread queue delete "$id" "$mid" >/dev/null; then
+				echo "discarded queued message $mid on $id, saved to $saved"
+			# Still queued, so not discarded: drop its row, and the next pass retries it.
+			elif q=$(bb thread queue list "$id" --json) && jq -e --arg m "$mid" 'any(.[]; .id == $m)' <<<"$q" >/dev/null && record "$mid"; then
+				echo "warn: cannot discard $mid on $id; it stays queued" >&2
+			else
+				echo "warn: cannot discard $mid on $id, and it may have left the queue, so its row stays in $saved" >&2
+			fi
 		done < <(jq -r --arg ids "$tree_ids" --argjson autos "$autos" '
 			($ids | split("\n") | map(select(. != ""))) as $tree
 			| [$autos[] | select((.createdByThreadId // "") | IN($tree[])) | .id] as $own

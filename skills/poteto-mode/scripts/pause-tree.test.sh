@@ -28,8 +28,11 @@ case "\$1 \$2" in
 		case "\$3" in
 			list) jq --arg t "\$4" '[.[] | select(.threadId == \$t)]' "\$queue" ;;
 			delete) jq -e --arg t "\$4" --arg m "\$5" 'any(.[]; .threadId == \$t and .id == \$m)' "\$queue" >/dev/null || { echo "no queued message \$5" >&2; exit 1; }
+				[ "\$5" = "\${REFUSE:-}" ] && { echo "refused \$5" >&2; exit 1; }
 				echo "delete \$5" >> "\$calls"
-				update "\$queue" --arg m "\$5" 'map(select(.id != \$m))' ;;
+				update "\$queue" --arg m "\$5" 'map(select(.id != \$m))'
+				# LOST: the delete lands but the call still fails.
+				if [ "\$5" = "\${LOST:-}" ]; then exit 1; fi ;;
 			*) exit 2 ;;
 		esac ;;
 	"thread stop")
@@ -185,6 +188,47 @@ seed
 out=$(run STUCK=thr_w1) && code=0 || code=$?
 expect "stuck exit" "$code" 1
 expect "stuck thread named" "$(grep -c 'thr_w1 stopping' <<<"$out")" 1
+
+echo "# nothing is discarded unless its recovery row is saved first: a missing, read-only or unreadable recovery file stops the run"
+for setup in missing readonly corrupt; do
+	seed
+	storage="$S/storage"
+	case "$setup" in
+		missing) storage="$S/missing" ;;
+		readonly) [ "$(id -u)" = 0 ] && continue; chmod 555 "$S/storage" ;;
+		corrupt) printf '{"id":"msg_tell","threadId":"thr_t' > "$S/storage/pause-tree-thr_root.jsonl" ;;
+	esac
+	out=$(run BB_THREAD_STORAGE="$storage") && code=0 || code=$?
+	chmod 755 "$S/storage"
+	expect "$setup exit" "$code" 1
+	expect "$setup deletes nothing" "$(grep -c '^delete ' "$S/calls" || true)" 0
+	expect "$setup queue intact" "$(jq -r 'map(.id) | sort | join(" ")' "$S/queue.json")" \
+		"msg_behind msg_due msg_else msg_fardue msg_rootdue msg_roottell msg_tell"
+	expect "$setup names the save failure" "$(grep -c '^error: cannot save queued message' <<<"$out" || true)" 1
+	expect "$setup never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
+done
+
+echo "# the recovery file holds one row per message id, with the content the message had when discarded"
+seed
+jq -c '.[] | select(.id == "msg_tell") | .content[0].text = "Stale brief."' "$S/queue.json" > "$S/storage/pause-tree-thr_root.jsonl"
+jq -c '.[] | select(.id == "msg_behind")' "$S/queue.json" >> "$S/storage/pause-tree-thr_root.jsonl"
+run >/dev/null && code=0 || code=$?
+expect "rerun exit" "$code" 0
+expect "one row per id" "$(jq -rs '[.[].id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl")" \
+	"msg_behind msg_due msg_fardue msg_rootdue msg_roottell msg_tell"
+expect "newest content wins" "$(jq -rs '.[] | select(.id == "msg_tell") | .content[0].text' "$S/storage/pause-tree-thr_root.jsonl")" "Phase 2 brief."
+
+echo "# a delete that fails while the message stays queued leaves it unsaved; one that fails after it left the queue keeps its row"
+seed
+out=$(run REFUSE=msg_tell) && code=0 || code=$?
+expect "refused exit" "$code" 1
+expect "refused message still queued" "$(queued thr_told)" "msg_tell"
+expect "refused message unsaved" "$(jq -rs '[.[].id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl")" \
+	"msg_behind msg_due msg_fardue msg_rootdue msg_roottell"
+seed
+out=$(run LOST=msg_tell) && code=0 || code=$?
+expect "lost exit" "$code" 0
+expect "lost message kept" "$(jq -rs '[.[] | select(.id == "msg_tell") | .content[0].text] | join(" ")' "$S/storage/pause-tree-thr_root.jsonl")" "Phase 2 brief."
 
 echo
 echo "$out"
