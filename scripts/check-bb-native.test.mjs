@@ -159,7 +159,7 @@ test("no skill is hidden from Codex, paths cannot be user-only, and frontmatter 
   assert.match(broken, /^broken \[yaml\] invalid SKILL\.md frontmatter or agents\/openai\.yaml: /);
   assert.deepEqual(rest, [
     "hidden/agents/openai.yaml [codex-hidden] BB sends /hidden to Codex as plain text, so a skill hidden from Codex's list cannot be run by slash; remove allow_implicit_invocation: false (BB-NATIVE.md)",
-    "stuck/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)",
+    "stuck/SKILL.md [paths-user-only] Claude Code will not load a disable-model-invocation skill for the model, so its paths rule could never fire; drop disable-model-invocation (BB-NATIVE.md)",
     "",
     "3/6 skills clean, 3 findings",
     "",

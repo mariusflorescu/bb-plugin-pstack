@@ -40,7 +40,7 @@ test("a mapping too long for BB's 4096-character limit is replaced by where to r
     assert.ok(text.length <= 4096, `${provider}: ${text.length} characters`);
     assert.equal(text.includes("claude-fable-5-1 @xhigh, claude-code"), false);
     assert.match(text, new RegExp(`Run bb plugin config pstack --json\\. .* inherit-parent means ${provider} / ${PARENTS[provider]}\\.$`));
-    assert.equal(text.includes(TS_LINE), provider === "codex");
+    assert.ok(text.includes(TS_LINE), provider);
   }
 });
 
@@ -52,9 +52,10 @@ test("the default mapping is inlined whole on every provider", async () => {
   }
 });
 
-test("a provider that ignores paths frontmatter is told to load the skill for matching files", async () => {
-  assert.ok((await instructions("", { provider: "codex" })).includes(`${TS_LINE}\n\nRole models`));
-  assert.equal((await instructions("", { provider: "claude-code" })).includes("Before you read or edit"), false);
+test("every provider is told to load a paths skill for matching files", async () => {
+  for (const provider of Object.keys(PARENTS)) {
+    assert.ok((await instructions("", { provider })).includes(`${TS_LINE}\n\nRole models`), provider);
+  }
 });
 
 test("a provider that ignores disable-model-invocation is told when to load a user-only skill", async () => {
@@ -66,8 +67,10 @@ test("a provider that ignores disable-model-invocation is told when to load a us
 });
 
 test("a switched-off skill gets no paths line", async () => {
-  const text = await instructions("", { provider: "codex", off: ["typescript-best-practices"] });
-  assert.equal(text.includes("Before you read or edit"), false);
+  for (const provider of Object.keys(PARENTS)) {
+    const text = await instructions("", { provider, off: ["typescript-best-practices"] });
+    assert.equal(text.includes("Before you read or edit"), false, provider);
+  }
 });
 
 test("path lines too long to fit give way to one fixed sentence before the role models do, and nothing passes the limit", () => {
@@ -87,5 +90,7 @@ test("path lines too long to fit give way to one fixed sentence before the role 
   const few = delegationRules("codex", "gpt-6-astra", long, many.slice(0, 1));
   assert.ok(few.includes("load the path-skill-0 skill.\n\nThe role models are too long"), few.slice(-600));
 
-  assert.equal(delegationRules("claude-code", "claude-opus-5-5", "", many).includes("Before you read or edit"), false);
+  const claude = delegationRules("claude-code", "claude-opus-5-5", "", many);
+  assert.ok(claude.length <= 4096, `${claude.length} characters`);
+  assert.match(claude, /load each pstack skill whose SKILL\.md `paths` globs match it\.\n\nRole models \(provider \/ model @effort\):\n/);
 });

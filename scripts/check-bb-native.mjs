@@ -87,11 +87,11 @@ function frontmatterName(text) {
   return block?.[1].match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "") ?? null;
 }
 
-// Claude Code reads disable-model-invocation and paths from SKILL.md; Codex
-// reads neither, and the injected rules stand in for both (BB-NATIVE.md).
-// Claude Code never path-loads a skill that also sets disable-model-invocation,
+// The injected rules load a `paths` skill for matching files on every provider,
+// but Claude Code will not load a disable-model-invocation skill for the model,
 // so the two cannot be combined. BB hands Codex `/<name>` as plain text, so a
-// skill hidden from Codex's list (agents/openai.yaml) cannot be run by slash.
+// skill hidden from Codex's list (agents/openai.yaml) cannot be run by slash
+// (BB-NATIVE.md).
 function invocationFindings(name, text) {
   const policy = join(SKILLS, name, "agents", "openai.yaml");
   let fm;
@@ -108,7 +108,7 @@ function invocationFindings(name, text) {
     findings.push(`${name}/agents/openai.yaml [codex-hidden] BB sends /${name} to Codex as plain text, so a skill hidden from Codex's list cannot be run by slash; remove allow_implicit_invocation: false (BB-NATIVE.md)`);
   }
   if (userOnly && paths(fm).length > 0) {
-    findings.push(`${name}/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)`);
+    findings.push(`${name}/SKILL.md [paths-user-only] Claude Code will not load a disable-model-invocation skill for the model, so its paths rule could never fire; drop disable-model-invocation (BB-NATIVE.md)`);
   }
   return findings;
 }
