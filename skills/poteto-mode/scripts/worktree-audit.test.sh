@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Rerunnable check for skills/poteto-mode/scripts/worktree-audit.sh.
-# Builds a scratch repo with a dozen worktrees and a stub `bb` and `gh`, runs
-# the audit, and asserts each row's columns by header name. Stub paths use the
-# non-canonical $TMPDIR form while git lists canonical paths, so a pass also
-# proves the path canonicalization.
+# Builds a scratch repo with a dozen worktrees and a stub `bb`, `gh` and
+# `lsof`, runs the audit, and asserts each row's columns by header name. Stub
+# paths use the non-canonical $TMPDIR form while git lists canonical paths, so
+# a pass also proves the path canonicalization. One run uses the real lsof
+# against a real process working inside a worktree.
 # Usage: worktree-audit.test.sh <path to worktree-audit.sh>
 set -eu
 audit="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 S="${TMPDIR:-/tmp}/wt-audit-test.$$"
-trap 'rm -rf "$S" "$S.link"' EXIT
+sleeper=""
+trap '[ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null; rm -rf "$S" "$S.link"' EXIT
 mkdir -p "$S/stub/logs"
 cd "$S"
 
@@ -23,8 +25,8 @@ wt() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && echo "$1" > "
 wt_at_main() { git worktree add -q -b "$1" "$S/wt-$1"; }
 wt merged && git merge -q --ff-only merged && git push -q origin main
 for name in wip inuse running child recent; do wt "$name"; done
-for name in hidden parent leaf new renamed staged byname byslash bytilde kid nested nestpin gonesub sib byproj bymain forkpin forkrun forkkid forkvis forkself; do wt_at_main "$name"; done
-mkdir -p "$S/wt-nested/scripts" "$S/wt-nestpin/packages/app" "$S/wt-sib-x" "$S/repo/tools"
+for name in hidden parent leaf new renamed staged byname byslash bytilde kid nested nestpin gonesub sib byproj bymain forkpin forkrun forkkid forkvis forkself termthr termenv termhost termdone proc; do wt_at_main "$name"; done
+mkdir -p "$S/wt-nested/scripts" "$S/wt-nestpin/packages/app" "$S/wt-sib-x" "$S/repo/tools" "$S/wt-termhost/src" "$S/wt-proc/src" "$S/wt-proc-x"
 git worktree add -q -b spaced "$S/wt-sp ace"
 ln -s "$S" "$S.link"
 git worktree add -q --detach "$S/wt-detached" && (cd "$S/wt-detached" && echo d > d.txt && git add . && git commit -qm detached)
@@ -54,7 +56,7 @@ envrow() { printf '{"id":"env_%s","projectId":"%s","hostId":"%s","path":"%s"}' "
 {
 	printf '[%s' "$(envrow far "$S/wt-merged" proj_far host_far)"
 	printf ',%s' "$(envrow main "$S/repo")" "$(envrow far2 "$S/elsewhere" proj_far)"
-	for name in merged inuse running child recent hidden parent leaf kid forkpin forkrun forkkid forkvis forkself; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
+	for name in merged inuse running child recent hidden parent leaf kid forkpin forkrun forkkid forkvis forkself termthr termenv termdone; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
 	# Attached below a worktree's root, one of them at a directory since deleted.
 	printf ',%s' "$(envrow nested "$S/wt-nested/scripts")" "$(envrow nestpin "$S/wt-nestpin/packages/app" proj_nest)" \
 		"$(envrow gonesub "$S/wt-gonesub/dist/")" "$(envrow sibx "$S/wt-sib-x")" "$(envrow tools "$S/repo/tools" proj_tools)"
@@ -93,7 +95,9 @@ thread() { # id env status pinnedAt parent updatedAt [visibility] [source] [proj
 		"$(thread thr_fkmid env_main idle null null "$old" hidden '"thr_srcpin"')" \
 		"$(thread thr_fkkid env_forkkid idle null '"thr_fkmid"' "$old" hidden)" \
 		"$(thread thr_fkvis env_forkvis idle null null "$old" visible '"thr_srcpin"')" \
-		"$(thread thr_fkself env_forkself idle null null "$old" hidden '"thr_self"')"
+		"$(thread thr_fkself env_forkself idle null null "$old" hidden '"thr_self"')" \
+		"$(thread thr_term env_termthr idle null null "$old")" \
+		"$(thread thr_tdone env_termdone idle null null "$old")"
 	printf ']\n'
 } > "$S/stub/threads.json"
 jq -c --argjson t "$old" '.[] | select(.id == "thr_p") | .id = "thr_mid" | .environmentId = "env_gone" | .parentThreadId = "thr_p" | .archivedAt = $t' \
@@ -107,9 +111,41 @@ echo "[{\"data\":{\"command\":\"cat $S/wt-byproj/src/y.ts\"}}]" > "$S/stub/logs/
 echo "[{\"data\":{\"command\":\"cat $S/wt-bymain/src/z.ts\"}}]" > "$S/stub/logs/thr_t.json"
 echo "[{\"data\":{\"text\":\"$(ls -d "$S"/wt-* | grep -v /wt-merged | tr '\n' ' ')\"}}]" > "$S/stub/logs/thr_self.json"
 
+# Live BB terminals: one scoped to an old idle thread, one to an environment
+# with no thread, one opened on this machine at a directory inside a worktree,
+# and those BB's thread status would never show. Another machine's terminal at
+# the same path is a different directory, and an exited one holds nothing.
+term() { # id thread environment host cwd status
+	jq -nc --arg id "$1" --arg t "$2" --arg e "$3" --arg h "$4" --arg c "$5" --arg st "$6" \
+		'{id: $id, threadId: (if $t == "" then null else $t end), environmentId: (if $e == "" then null else $e end),
+		hostId: $h, title: "zsh", initialCwd: $c, status: $st, lastUserInputAt: null}'
+}
+{
+	term term_thr thr_term "" host_here "$S/wt-termthr" running
+	term term_env "" env_termenv host_here "$S/wt-termenv" disconnected
+	term term_host "" "" host_here "$S/wt-termhost/src" running
+	term term_home "" "" host_here "~" running
+	term term_far "" "" host_far "$S/wt-sib" running
+	term term_done thr_tdone "" host_here "$S/wt-termdone" exited
+} | jq -s . > "$S/stub/terms.json"
+# Processes as lsof reports them, by canonical path: a shell inside a worktree,
+# and one in a sibling directory whose name only starts with that worktree's.
+R=$(cd "$S" && pwd -P)
+printf 'p4242\nczsh\nfcwd\nn%s/wt-proc/src\np4343\ncnode\nfcwd\nn%s/wt-proc-x\n' "$R" "$R" > "$S/stub/procs"
+
 cat > "$S/stub/gh" <<'EOF'
 #!/usr/bin/env bash
 echo '[]'
+EOF
+# Like `lsof -a -d cwd -Fpcn` run by `exec` from a subshell of the audit: the
+# audit itself (its parent), then each process in the fixture.
+cat > "$S/stub/lsof" <<EOF
+#!/usr/bin/env bash
+[ -n "\${LSOF_FAIL:-}" ] && { echo "lsof: cannot read processes" >&2; exit 1; }
+# LSOF_BLIND: a sandbox that hides every other process shows lsof only itself.
+[ -n "\${LSOF_BLIND:-}" ] && { printf 'p%s\nclsof\nfcwd\nn%s\n' "\$\$" "\$PWD"; exit 0; }
+printf 'p%s\ncbash\nfcwd\nn%s\n' "\$PPID" "$R/repo"
+cat "$S/stub/procs"
 EOF
 cat > "$S/stub/bb" <<EOF
 #!/usr/bin/env bash
@@ -126,13 +162,18 @@ case "\$cmd" in
 	"environment list") jq --arg h "\$host" '[.[] | select(\$h == "" or .hostId == \$h)]' "$S/stub/envs.json" ;;
 	"thread list") file=threads; [ -n "\$archived" ] && file=archived
 		jq --arg h "\$hidden" '[.[] | select(\$h != "" or .visibility == "visible")]' "$S/stub/\$file.json" ;;
+	"terminal list") [ -n "\${BB_STUB_FAIL_TERM:-}" ] && { echo '{"ok":false,"error":{"code":"down","message":"down"}}'; exit 1; }
+		jq --arg f "\$1" --arg id "\$2" '{sessions: [.[] | select(.status | IN("starting", "running", "disconnected"))
+			| select(if \$f == "--thread" then .threadId == \$id elif \$f == "--environment" then .threadId == null and .environmentId == \$id
+				elif \$f == "--machine" then .threadId == null and .environmentId == null and .hostId == \$id else error("scope") end)]}' "$S/stub/terms.json" ;;
 	"thread log") echo "\$1" >> "$S/stub/logs-read"
 		[ -n "\${BB_STUB_FAIL_LOG:-}" ] && exit 1
 		cat "$S/stub/logs/\$1.json" 2>/dev/null || echo '[]' ;;
 	*) exit 2 ;;
 esac
 EOF
-chmod +x "$S/stub/bb" "$S/stub/gh"
+chmod +x "$S/stub/bb" "$S/stub/gh" "$S/stub/lsof"
+mkdir "$S/stub-real-lsof" && ln -s "$S/stub/bb" "$S/stub/gh" "$S/stub-real-lsof/"
 
 fail=0
 field() {
@@ -276,6 +317,48 @@ narrowed=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=pro
 for kv in new=untracked:1 renamed=untracked:2 subnew=untracked:1 subdirty=wip:1; do
 	check "$narrowed" "${kv%%=*}" "DIRTY=${kv#*=}" "SNAPSHOT=$hex" BUCKET=hold-wip
 done
+
+echo "# a live terminal or a process working in a worktree holds it, since teardown kills both and BB's thread status counts neither"
+check "$out" termthr ENV=env_termthr TERMINALS=term_thr "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=hold-in-use
+check "$out" termenv ENV=env_termenv TERMINALS=term_env BUCKET=hold-in-use
+check "$out" termhost ENV=- TERMINALS=term_host BUCKET=hold-in-use
+check "$out" proc TERMINALS=- "PROCESSES=4242(zsh)" BUCKET=hold-in-use
+echo "# an exited terminal, another machine's terminal at the same path, and a process in a sibling directory hold nothing"
+check "$out" termdone TERMINALS=- PROCESSES=- BUCKET=safe
+check "$out" sib TERMINALS=- PROCESSES=- BUCKET=safe
+check "$out" merged TERMINALS=- PROCESSES=- BUCKET=safe
+
+echo "# terminals or processes it cannot read hold every row, the otherwise safe ones too: bb terminal list down, lsof failing, lsof that sees only itself"
+safe_rows() { env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self "$@" \
+	bash "$audit" "$S/repo" "$S/wt-merged" "$S/wt-sib" "$S/wt-termdone" 2>&1; }
+noterm=$(safe_rows BB_STUB_FAIL_TERM=1)
+nolsof=$(safe_rows LSOF_FAIL=1)
+blind=$(safe_rows LSOF_BLIND=1)
+check "$noterm" merged TERMINALS=[?] BUCKET=hold-unknown
+check "$nolsof" merged PROCESSES=[?] BUCKET=hold-unknown
+check "$blind" merged PROCESSES=[?] BUCKET=hold-unknown
+for o in "$noterm" "$nolsof" "$blind"; do
+	assert "no row is safe" '! field "$o" "*" BUCKET | grep -qx safe'
+done
+
+echo "# the recheck repeats both lookups: a process that started in a worktree after the first run holds it"
+printf 'p4545\ncvim\nfcwd\nn%s/wt-merged\n' "$R" >> "$S/stub/procs"
+late=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-merged" 2>&1)
+check "$late" merged "PROCESSES=4545(vim)" BUCKET=hold-in-use
+
+echo "# the real lsof finds a real process working inside a worktree"
+(cd "$S/wt-sib" && exec sleep 300) &
+sleeper=$!
+real=$(env PATH="$S/stub-real-lsof:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-sib" "$S/wt-merged" 2>&1)
+if command -v lsof >/dev/null; then
+	check "$real" sib "PROCESSES=$sleeper(sleep)" BUCKET=hold-in-use
+	check "$real" merged PROCESSES=- BUCKET=safe
+else
+	check "$real" sib PROCESSES=[?] BUCKET=hold-unknown
+fi
+kill "$sleeper" 2>/dev/null; sleeper=""
 
 echo
 echo "$out"

@@ -3,12 +3,14 @@
 # state, work that removal would lose (in submodules too) and a hash of it,
 # remote/PR state, and BB usage: the BB environments at or inside its path on
 # this machine, the threads in them or in this repo's projects whose logs name
-# the path, whether any of those or an ancestor is pinned or running, and which
-# other environments archiving its threads would cascade into. Emits a table
-# sorted by size with a suggested bucket.
+# the path, whether any of those or an ancestor is pinned or running, which
+# other environments archiving its threads would cascade into, and what still
+# runs in it: the live BB terminals of those environments and threads or opened
+# on this machine inside it, and every process on this machine working inside
+# it. Emits a table sorted by size with a suggested bucket.
 # Never deletes anything; deletion stays a human-gated step in the playbook.
-# BB state it cannot read makes every row hold-unknown, never safe. Work it
-# cannot read, in a submodule too, makes that row hold-unknown.
+# BB state or processes it cannot read make every row hold-unknown, never safe.
+# Work it cannot read, in a submodule too, makes that row hold-unknown.
 #
 # Usage: worktree-audit.sh [repo-path [worktree-path...]]
 #   Defaults to the current repo and all of its worktrees. Name worktrees to
@@ -213,10 +215,11 @@ if [ "$bb_known" = yes ]; then
 	# threads using it (BB's millisecond updatedAt, kept whole so a recheck
 	# sees activity later the same day), how many of those have a pinned or
 	# running thread in their ancestry, the environments outside this path
-	# that archiving its threads would reach, and the threads whose logs name
-	# it. BB's archive walks children, lifecycle dependents and hidden forks,
-	# through archived threads too, so the cascade walks down those links over
-	# both lists and the ancestry walks up them: a hidden fork is its source's
+	# that archiving its threads would reach, the threads whose logs name it,
+	# and every thread using it, whose terminals are listed next. BB's archive
+	# walks children, lifecycle dependents and hidden forks, through archived
+	# threads too, so the cascade walks down those links over both lists and
+	# the ancestry walks up them: a hidden fork is its source's
 	# background work, so a pinned or running source holds the fork's worktree.
 	# This thread is running only because it runs the audit, so it holds the
 	# worktree it works in but not the worktrees of its descendants.
@@ -244,12 +247,50 @@ if [ "$bb_known" = yes ]; then
 			($users | map(select(any(lineage; .pinnedAt != null))) | length),
 			($users | map(select(.id == $self or any(lineage; .id != $self and running))) | length),
 			(if $outside == [] then "-" else [$outside[] | .environmentId // .id] | unique | join(",") end),
-			(($named[$wt] // []) | if . == [] then "-" else join(",") end)]
+			(($named[$wt] // []) | if . == [] then "-" else join(",") end),
+			($users | if . == [] then "-" else map(.id) | join(",") end)]
 		| @tsv') || bb_fail "could not join BB state to worktrees"
+fi
+
+# Live BB terminals, which BB's thread status and activity leave out and
+# teardown kills with the worktree: each one scoped to an environment in a
+# worktree or to a thread using it ("scope<TAB>terminal"), and each one opened
+# on this machine at a directory ("canonical cwd<TAB>terminal").
+bb_sessions() { local out; out=$(bb terminal list "$@" --json 2>/dev/null) && jq -e '.sessions | type == "array"' >/dev/null 2>&1 <<<"$out" && printf '%s\n' "$out"; }
+scoped=""; at_path=""
+if [ "$bb_known" = yes ]; then
+	while IFS=$'\t' read -r flag id; do
+		[ -z "$id" ] && continue
+		list=$(bb_sessions "$flag" "$id") || { bb_fail "cannot list the terminals of $id"; break; }
+		scoped+=$(jq -r --arg s "$id" '.sessions[] | [$s, .id] | @tsv' <<<"$list")$'\n'
+	done < <(awk -F'\t' '{ n = split($2, e, ","); for (i = 1; i <= n; i++) if (e[i] != "-") print "--environment\t" e[i]
+		n = split($8, t, ","); for (i = 1; i <= n; i++) if (t[i] != "-") print "--thread\t" t[i] }' <<<"$usage" | sort -u)
+fi
+if [ "$bb_known" = yes ]; then
+	list=$(bb_sessions --machine "$host") || bb_fail "cannot list this machine's terminals"
+	[ "$bb_known" = yes ] && at_path=$(jq -r '.sessions[] | [.id, .initialCwd // ""] | @tsv' <<<"$list" | while IFS=$'\t' read -r id cwd; do
+		case "$cwd" in "~/"*) cwd="$HOME/${cwd#"~/"}" ;; /*) ;; *) continue ;; esac
+		printf '%s\t%s\n' "$(canonical "$cwd")" "$id"
+	done)
+fi
+
+# Every process on this machine by working directory ("pid<TAB>command<TAB>cwd"),
+# since teardown kills each one inside the worktree, a user's shell, editor or
+# server too, and `git worktree remove` pulls the directory out from under it.
+# lsof runs from / so that neither it nor its subshell works in a worktree. It
+# must list this audit, which works in $repo, or it cannot see other processes.
+procs_known=yes
+if raw=$(cd / && exec lsof -a -d cwd -Fpcn 2>/dev/null) \
+	&& procs=$(awk '/^p/ { pid = substr($0, 2) } /^c/ { cmd = substr($0, 2) } /^n/ { print pid "\t" cmd "\t" substr($0, 2) }' <<<"$raw") \
+	&& awk -F'\t' -v self=$$ '$1 == self { found = 1 } END { exit !found }' <<<"$procs"; then
+	procs=$(awk -F'\t' -v self=$$ '$1 != self' <<<"$procs")
+else
+	procs_known=no
+	echo "warn: cannot list this machine's processes by working directory (lsof); every row is hold-unknown" >&2
 fi
 now=$(date +%s)
 
-printf "SIZE\tAGE\tMERGED\tDIRTY\tSNAPSHOT\tREMOTE\tPR\tENV\tLAST_THREAD\tCASCADE\tMENTIONS\tBUCKET\tWORKTREE\n"
+printf "SIZE\tAGE\tMERGED\tDIRTY\tSNAPSHOT\tREMOTE\tPR\tENV\tLAST_THREAD\tTERMINALS\tPROCESSES\tCASCADE\tMENTIONS\tBUCKET\tWORKTREE\n"
 
 while read -r wt; do
 	[ -z "$wt" ] && continue
@@ -297,22 +338,29 @@ while read -r wt; do
 		'.[] | select(.headRefName==$b) | "#\(.number)/\(.state)"' <<<"$prs" 2>/dev/null | head -1)
 	[ -z "$pr" ] && pr="-"
 
-	env="?"; last="?"; cascade="?"; named="?"; last_ms=0; pinned=0; running=0
+	env="?"; last="?"; cascade="?"; named="?"; last_ms=0; pinned=0; running=0; users="-"; terms="?"; here="?"
 	if [ "$bb_known" = yes ]; then
-		IFS=$'\t' read -r _ env last_ms pinned running cascade named \
+		IFS=$'\t' read -r _ env last_ms pinned running cascade named users \
 			< <(awk -F'\t' -v p="$wt" '$1 == p' <<<"$usage")
+		terms=$({ SCOPES=",$env,$users," awk -F'\t' '$1 != "" && index(ENVIRON["SCOPES"], "," $1 ",") { print $2 }' <<<"$scoped"
+			awk -F'\t' -v p="$wt" '$1 == p || index($1, p "/") == 1 { print $2 }' <<<"$at_path"; } | sort -u | paste -sd, -)
+		terms="${terms:--}"
 		last="-"
 		[ "${last_ms:-0}" -gt 0 ] && last=$(jq -rn --argjson ms "$last_ms" \
 			'($ms / 1000 | floor | todate | sub("Z$"; "")) + "." + ("00" + ($ms % 1000 | tostring))[-3:] + "Z"')
 		[ "${pinned:-0}" -gt 0 ] && last="$last,pinned"
 		[ "${running:-0}" -gt 0 ] && last="$last,running"
 	fi
+	if [ "$procs_known" = yes ]; then
+		here=$(awk -F'\t' -v p="$wt" '$3 == p || index($3, p "/") == 1 { print $1 "(" $2 ")" }' <<<"$procs" | paste -sd, -)
+		here="${here:--}"
+	fi
 	recent=$([ "${last_ms:-0}" -gt 0 ] && [ $(( (now - last_ms / 1000) / 86400 )) -le 4 ] && echo yes || echo no)
 
 	# First match wins, so every hold outranks every go, and the holds a user
 	# cannot release outrank the ones they can.
-	if [ "$bb_known" != yes ] || [ "$dirty" = "?" ] || [ "$snap" = "?" ]; then bucket=hold-unknown
-	elif [ "${pinned:-0}" -gt 0 ] || [ "${running:-0}" -gt 0 ]; then bucket=hold-in-use
+	if [ "$bb_known" != yes ] || [ "$procs_known" != yes ] || [ "$dirty" = "?" ] || [ "$snap" = "?" ]; then bucket=hold-unknown
+	elif [ "${pinned:-0}" -gt 0 ] || [ "${running:-0}" -gt 0 ] || [ "$terms" != "-" ] || [ "$here" != "-" ]; then bucket=hold-in-use
 	elif [ "$cascade" != "-" ]; then bucket=hold-cascade
 	elif [ "$dirty" != clean ]; then bucket=hold-wip
 	elif [[ "$pr" == *OPEN* ]]; then bucket=hold-open-pr
@@ -320,6 +368,6 @@ while read -r wt; do
 	elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
 	else bucket=review; fi
 
-	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-		"$size" "$age" "$merged" "$dirty" "$snap" "$remote" "$pr" "$env" "$last" "$cascade" "$named" "$bucket" "$wt"
+	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+		"$size" "$age" "$merged" "$dirty" "$snap" "$remote" "$pr" "$env" "$last" "$terms" "$here" "$cascade" "$named" "$bucket" "$wt"
 done <<<"$wts" | sort -t$'\t' -k1,1 -rh

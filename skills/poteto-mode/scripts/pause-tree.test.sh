@@ -9,8 +9,10 @@
 # still run a turn for a thread listed idle or error until a stop interrupts
 # it, a thread list
 # derives queuedWork from the queue and lists every project's threads without
-# --parent-thread, a fork has no parent and reports to no one, and automations
-# are listed and paused one project at a time.
+# --parent-thread, a fork has no parent and reports to no one, automations
+# are listed and paused one project at a time, the personal project lists only
+# with --include-personal, an automation can target a thread of another
+# project, and a thread left running (SPAWNER) starts a child of its own.
 # Asserts the end state of every thread, queued message and automation.
 # Usage: pause-tree.test.sh <path to pause-tree.sh>
 set -eu
@@ -21,14 +23,23 @@ mkdir -p "$S/stub" "$S/storage"
 
 cat > "$S/stub/bb" <<EOF
 #!/usr/bin/env bash
-state="$S/threads.json" queue="$S/queue.json" autos="$S/automations.json" terms="$S/terminals.json" calls="$S/calls"
+state="$S/threads.json" queue="$S/queue.json" autos="$S/automations.json" terms="$S/terminals.json" projects="$S/projects.json" calls="$S/calls"
 update() { f="\$1"; shift; jq "\$@" "\$f" > "\$f.new" && mv "\$f.new" "\$f"; }
+# SPAWNER: while that thread runs, it starts one child, thr_late, of its own.
+spawn() {
+	[ -n "\${SPAWNER:-}" ] || return 0
+	jq -e --arg s "\$SPAWNER" 'any(.[]; .id == \$s and .status == "active") and (any(.[]; .id == "thr_late") | not)' "\$state" >/dev/null || return 0
+	update "\$state" --arg s "\$SPAWNER" '. + [{id: "thr_late", projectId: "proj", parentThreadId: \$s, status: "active", visibility: "visible"}]'
+	echo "spawn thr_late" >> "\$calls"
+}
 case "\$1 \$2" in
 	"thread list")
 		parent=""; hidden=""; prev=""
 		for a in "\$@"; do [ "\$prev" = --parent-thread ] && parent="\$a"; [ "\$a" = --include-hidden ] && hidden=1; prev="\$a"; done
 		jq --arg p "\$parent" --arg h "\$hidden" --slurpfile q "\$queue" '[.[] | select(\$p == "" or .parentThreadId == \$p) | select(\$h != "" or .visibility == "visible")
-			| .id as \$id | .queuedWork = (if any(\$q[0][]; .threadId == \$id) then "waiting" else "none" end)]' "\$state" ;;
+			| .id as \$id | .queuedWork = (if any(\$q[0][]; .threadId == \$id) then "waiting" else "none" end)]' "\$state"
+		# Once every child of the spawner looks settled, it starts another, after this list was read.
+		if [ -n "\${SPAWNER:-}" ] && jq -e --arg s "\$SPAWNER" 'all(.[] | select(.parentThreadId == \$s); .status | IN("idle", "error"))' "\$state" >/dev/null; then spawn; fi ;;
 	"thread queue")
 		case "\$3" in
 			list) jq --arg t "\$4" '[.[] | select(.threadId == \$t)]' "\$queue" ;;
@@ -46,6 +57,8 @@ case "\$1 \$2" in
 		# STOPFAIL: the stop call fails and nothing changes.
 		[ "\$id" = "\${STOPFAIL:-}" ] && { echo "cannot stop \$id" >&2; exit 1; }
 		[ "\$id" = "\${STUCK:-}" ] && { update "\$state" --arg id "\$id" 'map(if .id == \$id then .status = "stopping" else . end)'; exit 0; }
+		# A running spawner's child can land just before the stop does.
+		[ "\$id" = "\${SPAWNER:-}" ] && spawn
 		# machineTurn: the machine still runs a turn that the listed status (idle, error) does not show.
 		busy=\$(jq -r --arg id "\$id" '.[] | select(.id == \$id) | (.status | IN("pending", "starting", "active", "stopping")) or .machineTurn == true' "\$state")
 		[ "\$busy" = true ] || exit 0
@@ -78,7 +91,15 @@ case "\$1 \$2" in
 			then .status = "exited" | .closeReason = "user" else . end)'
 		[ -n "\$json" ] && jq --arg id "\$id" '.[] | select(.id == \$id)' "\$terms"
 		exit 0 ;;
+	"project list")
+		# PROJECTS_FAIL: the list fails with the JSON error envelope, or with nothing on stdout when "silent".
+		[ "\${PROJECTS_FAIL:-}" = silent ] && { echo "bb: server unreachable" >&2; exit 1; }
+		[ -n "\${PROJECTS_FAIL:-}" ] && { echo '{"ok":false,"error":{"code":"down","message":"down"}}'; exit 1; }
+		personal=""; for a in "\$@"; do [ "\$a" = --include-personal ] && personal=1; done
+		jq --arg p "\$personal" '[.[] | select(\$p != "" or .kind != "personal")]' "\$projects" ;;
 	"automation list") [ "\$3" = --project ] || exit 2
+		# AUTOLIST_FAIL: that project's automations cannot be listed.
+		[ "\$4" = "\${AUTOLIST_FAIL:-}" ] && { echo '{"ok":false,"error":{"code":"down","message":"down"}}'; exit 1; }
 		jq --arg p "\$4" '[.[] | select(.projectId == \$p)]' "\$autos" ;;
 	"automation pause") [ "\$4" = --project ] || exit 2
 		jq -e --arg id "\$3" --arg p "\$5" 'any(.[]; .id == \$id and .projectId == \$p)' "\$autos" >/dev/null || { echo "no automation \$3 in \$5" >&2; exit 1; }
@@ -125,7 +146,14 @@ EOF
  {"id":"auto_spawner","projectId":"proj","enabled":true,"createdByThreadId":"thr_root","execution":{"mode":"agent"}},
  {"id":"auto_other","projectId":"proj","enabled":true,"createdByThreadId":"thr_elsewhere","execution":{"mode":"agent","targetThreadId":"thr_elsewhere"}},
  {"id":"auto_far","projectId":"proj_other","enabled":true,"createdByThreadId":"thr_far","execution":{"mode":"agent","targetThreadId":"thr_far"}},
- {"id":"auto_stranger","projectId":"proj_other","enabled":true,"createdByThreadId":null,"execution":{"mode":"agent","targetThreadId":"thr_stranger"}}]
+ {"id":"auto_stranger","projectId":"proj_other","enabled":true,"createdByThreadId":null,"execution":{"mode":"agent","targetThreadId":"thr_stranger"}},
+ {"id":"auto_sched","projectId":"proj_scheduler","enabled":true,"createdByThreadId":null,"targetThreadId":"thr_root","execution":{"mode":"agent","targetThreadId":"thr_root"}},
+ {"id":"auto_mine","projectId":"proj_personal","enabled":true,"createdByThreadId":null,"targetThreadId":"thr_w1","execution":{"mode":"agent","targetThreadId":"thr_w1"}},
+ {"id":"auto_schedother","projectId":"proj_scheduler","enabled":true,"createdByThreadId":null,"targetThreadId":"thr_stranger","execution":{"mode":"agent","targetThreadId":"thr_stranger"}}]
+EOF
+	cat > "$S/projects.json" <<'EOF'
+[{"id":"proj_personal","kind":"personal"},{"id":"proj","kind":"standard"},{"id":"proj_other","kind":"standard"},
+ {"id":"proj_dep","kind":"standard"},{"id":"proj_caller","kind":"standard"},{"id":"proj_scheduler","kind":"standard"}]
 EOF
 	cat > "$S/terminals.json" <<'EOF'
 [{"id":"term_dev","threadId":"thr_w1","title":"pnpm dev","initialCwd":"/work/app","status":"running","exitCode":null,"closeReason":null},
@@ -278,6 +306,100 @@ expect "root's own message named" "$(grep -c '^  thr_root active msg_rootuser us
 expect "root never stopped" "$(calls "stop thr_root")" 0
 expect "auto_user paused" "$(enabled auto_user)" false
 for id in thr_sub thr_w1 thr_w2 thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
+
+echo "# an automation owned by a project no thread of the tree lives in, the personal project too, is paused in its own project"
+seed
+out=$(run) && code=0 || code=$?
+expect "outside-owner exit" "$code" 0
+expect "auto_sched" "$(enabled auto_sched)" false
+expect "auto_sched named with its owning project" "$(grep -c '^paused automation auto_sched in proj_scheduler$' <<<"$out" || true)" 1
+expect "auto_mine" "$(enabled auto_mine)" false
+expect "auto_mine named with the personal project" "$(grep -c '^paused automation auto_mine in proj_personal$' <<<"$out" || true)" 1
+expect "auto_schedother untouched" "$(enabled auto_schedother)" true
+
+echo "# an automation inventory it cannot complete fails the run before any thread is stopped, after pausing what it could list"
+seed
+out=$(run AUTOLIST_FAIL=proj_scheduler) && code=0 || code=$?
+expect "one project unlisted exit" "$code" 1
+expect "the unlisted project named" "$(grep -c '^error: cannot list automations in proj_scheduler' <<<"$out" || true)" 1
+expect "one project unlisted stops nothing" "$(grep -c '^stop ' "$S/calls" || true)" 0
+expect "one project unlisted still pauses the others" "$(enabled auto_tick) $(enabled auto_mine)" "false false"
+expect "one project unlisted never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
+for mode in envelope silent; do
+	seed
+	out=$(run PROJECTS_FAIL=$mode) && code=0 || code=$?
+	expect "no projects ($mode) exit" "$code" 1
+	expect "no projects ($mode) named" "$(grep -c '^error: cannot list the projects' <<<"$out" || true)" 1
+	expect "no projects ($mode) stops nothing" "$(grep -c '^stop ' "$S/calls" || true)" 0
+	expect "no projects ($mode) never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
+done
+
+echo "# without --stop-target the target is never stopped, so a child it starts after the last pass is left running"
+spawn_seed() {
+	seed
+	cat > "$S/threads.json" <<'EOF'
+[{"id":"thr_root","projectId":"proj","parentThreadId":null,"status":"active","visibility":"visible"},
+ {"id":"thr_c1","projectId":"proj","parentThreadId":"thr_root","status":"active","visibility":"visible"}]
+EOF
+	echo '[]' > "$S/queue.json"
+	echo '[]' > "$S/terminals.json"
+}
+spawn_seed
+out=$(run SPAWNER=thr_root) && code=0 || code=$?
+expect "unstopped target exit" "$code" 0
+expect "unstopped target reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 1
+expect "the late child runs on" "$(status thr_late)" active/none
+expect "the late child never stopped" "$(calls "stop thr_late")" 0
+expect "unstopped target never stopped" "$(calls "stop thr_root")" 0
+
+echo "# with --stop-target the target is stopped first on every pass, and the child it started before that stop is caught"
+spawn_seed
+out=$(env PATH="$S/stub:$PATH" BB_PROJECT_ID=proj BB_THREAD_STORAGE="$S/storage" PAUSE_TREE_SETTLE=0 SPAWNER=thr_root bash "$script" --stop-target thr_root 2>&1) && code=0 || code=$?
+expect "stop-target exit" "$code" 0
+expect "the late child was started" "$(calls "spawn thr_late")" 1
+expect "the late child stopped" "$([ "$(calls "stop thr_late")" -ge 1 ] && echo yes || echo no)" yes
+expect "nothing left running" "$(jq -r '[.[] | select(.status | IN("pending", "starting", "active", "stopping")) | .id] | join(" ")' "$S/threads.json")" ""
+expect "the target stopped" "$([ "$(calls "stop thr_root")" -ge 1 ] && echo yes || echo no)" yes
+expect "the target named once" "$(grep -c '^stopped thr_root, the target$' <<<"$out" || true)" 1
+expect "settled with the target" "$(grep -c '^settled thr_root and 2 descendants' <<<"$out" || true)" 1
+
+echo "# with --stop-target the target's program wake-ups are saved and discarded before its stop dispatches one, and its terminals close with --if-clean"
+seed
+out=$(env PATH="$S/stub:$PATH" BB_PROJECT_ID=proj BB_THREAD_STORAGE="$S/storage" PAUSE_TREE_SETTLE=0 bash "$script" --stop-target thr_root 2>&1) && code=0 || code=$?
+expect "stop-target full exit" "$code" 0
+expect "thr_root settled" "$(status thr_root)" idle/none
+for id in thr_sub thr_w1 thr_w2 thr_far thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
+expect "thr_elsewhere untouched" "$(status thr_elsewhere)" active/waiting
+expect "the target's wake-ups saved" "$(jq -rs '[.[] | select(.threadId == "thr_root" and .kind != "terminal") | .id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "msg_rootdue msg_roottell"
+expect "none dispatched" "$(grep -c '^dispatch ' "$S/calls" || true)" 0
+expect "term_root closed" "$(term term_root)" exited
+expect "term_root saved with an empty route" "$(jq -rsc '.[] | select(.id == "term_root") | [.kind, .threadId, (.route | tojson)] | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "terminal thr_root []"
+expect "every close is --if-clean" "$(grep -c '^force ' "$S/calls" || true)" 0
+expect "term_else untouched" "$(term term_else)" running
+
+echo "# with --stop-target another program's message on the target holds it like a descendant: left queued, never stopped, named, and the run fails"
+seed
+{
+	jq '.[]' "$S/queue.json"
+	msg msg_rootuser thr_root user "" app time "Also update the docs."
+} | jq -s . > "$S/queue.new" && mv "$S/queue.new" "$S/queue.json"
+out=$(env PATH="$S/stub:$PATH" BB_PROJECT_ID=proj BB_THREAD_STORAGE="$S/storage" PAUSE_TREE_SETTLE=0 bash "$script" --stop-target thr_root 2>&1) && code=0 || code=$?
+expect "held target exit" "$code" 1
+expect "held target's message left queued" "$(queued thr_root)" "msg_rootuser"
+expect "held target never stopped" "$(calls "stop thr_root")" 0
+expect "held target named" "$(grep -c '^  thr_root active msg_rootuser user' <<<"$out" || true)" 1
+expect "held target's program wake-ups still discarded" "$(jq -rs '[.[] | select(.threadId == "thr_root" and .kind != "terminal") | .id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "msg_rootdue msg_roottell"
+expect "held target's terminal untouched" "$(term term_root)" running
+
+echo "# with --stop-target a target whose stop fails never settles"
+seed
+out=$(env PATH="$S/stub:$PATH" BB_PROJECT_ID=proj BB_THREAD_STORAGE="$S/storage" PAUSE_TREE_SETTLE=0 STOPFAIL=thr_root bash "$script" --stop-target thr_root 2>&1) && code=0 || code=$?
+expect "target stop-failed exit" "$code" 1
+expect "target stop-failed never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
+expect "target stop-failed named" "$(grep -c '^  thr_root active none not-stopped-this-pass (the target)$' <<<"$out" || true)" 1
+
+echo "# the usage names the flag"
+expect "usage" "$(bash "$script" 2>&1 | grep -c '^usage: pause-tree.sh \[--stop-target\] <thread-id>$' || true)" 1
 
 echo "# a thread that will not stop is named"
 seed
