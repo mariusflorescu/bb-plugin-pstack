@@ -42,7 +42,8 @@ git:* | http://* | https://*)
 	top=$(git -C "$dir" rev-parse --show-toplevel)
 	sub=$(git -C "$dir" rev-parse --show-prefix)
 	# git resolves a relative local origin from the repository root, and the fetch below runs in the cache.
-	case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$top/$url" ;; esac ;; esac
+	# An absolute or home-relative (~) origin is already resolvable from anywhere.
+	case "$url" in /* | '~'*) ;; *) case "${url%%:*}" in "$url" | */*) url="$top/$url" ;; esac ;; esac
 	;;
 esac
 

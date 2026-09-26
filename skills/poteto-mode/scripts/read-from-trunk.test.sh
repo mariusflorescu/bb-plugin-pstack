@@ -28,6 +28,8 @@ git -C plugin checkout -qb release/v2 && echo "release v2" > "plugin/$playbook" 
 git -C plugin checkout -qb feature main && echo "local edit" > "plugin/$playbook" && commit plugin local
 git clone -q origin.git relative
 git -C relative remote set-url origin ../origin.git
+git clone -q origin.git tilde
+git -C tilde remote set-url origin '~/origin.git'
 git init -q -b main lonely
 
 # A path install of a plugin nested in its repository (`bb plugin install
@@ -82,7 +84,7 @@ git_source() {
 fail=0
 run() {
 	# BB turns a scheme-less git source into https://; this maps that host to the scratch origins.
-	STUB_SOURCE="$1" PATH="$S/stub:$PATH" BB_THREAD_STORAGE="$S/storage" \
+	STUB_SOURCE="$1" PATH="$S/stub:$PATH" BB_THREAD_STORAGE="$S/storage" HOME="$S" \
 		GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$S/.insteadOf" GIT_CONFIG_VALUE_0="https://git.example.test/" \
 		bash "$script" "${2:-$playbook}" 2>"$S/err"
 }
@@ -113,6 +115,7 @@ if grep -q "@$trunk\$" "$S/err"; then echo "ok   revision on stderr"; else echo 
 git -C plugin checkout -q main && echo "trunk v2" > "plugin/$playbook" && commit plugin v2 && git -C plugin push -q origin main
 expect "follows trunk when it moves" "$(path_source "$S/plugin")" "trunk v2"
 expect "path source with a relative origin" "$(path_source "$S/relative")" "trunk v2"
+expect "path source with a home-relative (~) origin" "$(path_source "$S/tilde")" "trunk v2"
 expect "nested path install reads under its prefix" "$(path_source "$S/nested-abs/$nest")" "nested trunk v1"
 expect "nested path install with a relative origin" "$(path_source "$S/nested/$nest")" "nested trunk v1"
 
