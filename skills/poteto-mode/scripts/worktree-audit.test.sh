@@ -36,6 +36,19 @@ echo scratch > "$S/wt-inuse/scratch.md"
 (cd "$S/wt-staged" && echo staged1 > a.txt && git add a.txt && echo final > a.txt)
 echo scratch > "$S/wt-running/scratch.md"
 
+# Submodules: outer nests inner, and each sub* worktree checks outer out recursively.
+gitc() { git -c user.email=t@t -c user.name=t -c protocol.file.allow=always "$@"; }
+for r in inner outer; do git init -q -b main "$S/$r" && echo "$r" > "$S/$r/$r.txt" && git -C "$S/$r" add . && gitc -C "$S/$r" commit -qm "$r"; done
+gitc -C "$S/outer" submodule add -q "$S/inner" inner && gitc -C "$S/outer" commit -qm inner
+sm() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && gitc submodule add -q "$S/outer" outer && gitc submodule update -q --init --recursive && git commit -qm "$1"); }
+for name in subclean subdirty subnew subignored subcommit subgone subbare; do sm "$name"; done
+echo edited >> "$S/wt-subdirty/outer/inner/inner.txt"
+echo draft > "$S/wt-subnew/outer/notes.md"
+(cd "$S/wt-subignored" && git config -f .gitmodules submodule.outer.ignore all && git commit -qam ignore && echo edited >> outer/outer.txt)
+(cd "$S/wt-subcommit" && echo more >> outer/outer.txt && gitc -C outer commit -qam local && git commit -qam bump)
+rm -rf "$S/repo/.git/worktrees/wt-subgone/modules/outer"
+rm "$S/wt-subbare/outer/.git"
+
 now=$(( $(date +%s) * 1000 )); old=$(( now - 10 * 86400 * 1000 ))
 envrow() { printf '{"id":"env_%s","projectId":"%s","hostId":"%s","path":"%s"}' "$1" "${3:-proj_here}" "${4:-host_here}" "$2"; }
 {
@@ -198,6 +211,30 @@ for name in wip new renamed detached staged; do
 	assert "$name snapshot changes with its content" '[ "$(field "$snap" "$name" SNAPSHOT)" != "$(field "$out" "$name" SNAPSHOT)" ]'
 done
 assert "leaf snapshot is stable" '[ "$(field "$snap" leaf SNAPSHOT)" = "$(field "$out" leaf SNAPSHOT)" ]'
+
+echo "# a submodule's work counts at any depth, whatever ignore it has, and so do commits only its repository holds"
+check "$out" subclean DIRTY=clean SNAPSHOT=- BUCKET=review
+hex=$(printf '[0-9a-f]%.0s' 1 2 3 4 5 6 7 8 9 10 11 12)
+check "$out" subdirty DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
+check "$out" subnew DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
+check "$out" subignored DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
+check "$out" subcommit DIRTY=unreachable "SNAPSHOT=$hex" BUCKET=hold-wip
+echo "# a submodule it cannot read holds the row"
+check "$out" subgone BUCKET=hold-unknown
+check "$out" subbare BUCKET=hold-unknown
+echo "# the snapshot binds each submodule's content and local commits while the gitlink reads the same"
+gitlink() { git -C "$S/wt-$1" diff HEAD --submodule=short --ignore-submodules=none; }
+before=$(for name in subdirty subnew subcommit; do gitlink "$name"; done)
+echo other >> "$S/wt-subdirty/outer/inner/inner.txt"
+echo 'rm -rf ~' > "$S/wt-subnew/outer/notes.md"
+(cd "$S/wt-subcommit/outer" && git checkout -q -b side && echo side >> outer.txt && gitc commit -qam side && git checkout -q main)
+subsnap=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-subdirty" "$S/wt-subnew" "$S/wt-subcommit" 2>&1)
+assert "every gitlink and its diff read the same" '[ "$(for name in subdirty subnew subcommit; do gitlink "$name"; done)" = "$before" ]'
+for kv in subdirty=wip:1 subnew=wip:1 subcommit=unreachable; do check "$subsnap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
+for name in subdirty subnew subcommit; do
+	assert "$name snapshot changes with its submodule" '[ "$(field "$subsnap" "$name" SNAPSHOT)" != "$(field "$out" "$name" SNAPSHOT)" ]'
+done
 
 echo "# an approval binds to LAST_THREAD: activity later the same day, even a millisecond later, changes it"
 jq '(.[] | select(.id == "thr_e") | .updatedAt) += 1' "$S/stub/threads.json" > "$S/stub/threads.new" && mv "$S/stub/threads.new" "$S/stub/threads.json"

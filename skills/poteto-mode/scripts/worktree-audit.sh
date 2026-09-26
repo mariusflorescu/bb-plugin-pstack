@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Read-only worktree prune audit. Classifies every git worktree by size, merge
-# state, work that removal would lose and a hash of it, remote/PR state, and BB
-# usage: the BB environments at or inside its path on this machine, the threads
-# in them or in this repo's projects whose logs name the path, whether any of
-# those or an ancestor is pinned or running, and which other environments
-# archiving its threads would cascade into. Emits a table sorted by size with a suggested bucket.
+# state, work that removal would lose (in submodules too) and a hash of it,
+# remote/PR state, and BB usage: the BB environments at or inside its path on
+# this machine, the threads in them or in this repo's projects whose logs name
+# the path, whether any of those or an ancestor is pinned or running, and which
+# other environments archiving its threads would cascade into. Emits a table
+# sorted by size with a suggested bucket.
 # Never deletes anything; deletion stays a human-gated step in the playbook.
-# BB state it cannot read makes every row hold-unknown, never safe.
+# BB state it cannot read makes every row hold-unknown, never safe. Work it
+# cannot read, in a submodule too, makes that row hold-unknown.
 #
 # Usage: worktree-audit.sh [repo-path [worktree-path...]]
 #   Defaults to the current repo and all of its worktrees. Name worktrees to
@@ -58,20 +60,66 @@ mentioned_worktrees() {
 	printf '%s\n' "$found" | sed '/^$/d' | sort -u
 }
 
+# Every checked-out submodule under $1, at any depth: a gitlink in the index
+# whose directory is not empty. A linked worktree keeps its submodules'
+# repositories in its own git dir, so removal deletes them with their
+# commits. Fails on one that is not a repository of its own or whose path git
+# has to quote, so the row holds.
+submodules() {
+	local index sub entries prefix
+	index=$(git -C "$1" -c core.quotePath=false ls-files --stage) || return 1
+	while IFS= read -r sub; do
+		[ -z "$sub" ] && continue
+		case "$sub" in \"*) return 1 ;; esac
+		[ -e "$1/$sub" ] || continue
+		entries=$(ls -A "$1/$sub") || return 1
+		[ -z "$entries" ] && continue
+		prefix=$(git -C "$1/$sub" rev-parse --show-prefix) && [ -z "$prefix" ] || return 1
+		printf '%s\n' "$1/$sub"
+		submodules "$1/$sub" || return 1
+	done < <(awk -F'\t' '$1 ~ /^160000 / { print $2 }' <<<"$index" | sort -u)
+}
+
+# A commit in a submodule under $1 that no remote-tracking ref of that
+# submodule contains, if any.
+submodule_unpushed() {
+	local subs sub ahead
+	subs=$(submodules "$1") || return 1
+	while IFS= read -r sub; do
+		[ -z "$sub" ] && continue
+		ahead=$(git -C "$sub" rev-list -n1 --all --not --remotes) || return 1
+		[ -z "$ahead" ] || { printf '%s\n' "$ahead"; return 0; }
+	done <<<"$subs"
+}
+
 # The work removing a worktree loses, as one hash: HEAD, every index entry
 # (mode, blob and stage, since `diff HEAD` skips staged content the working
 # tree has moved past), the tracked diff against HEAD, and each untracked
 # file's path and content. Counts stay the same when one file is swapped for
 # another, so an approval to lose work binds to this. A path git has to quote
-# fails the hash, and the row holds.
-snapshot() {
+# fails the hash, and the row holds. Git's diff names a submodule by one
+# commit, so each submodule adds the same four, plus its local refs, which
+# removal deletes too. A submodule it cannot read fails the hash.
+work() {
 	local head index diff paths blobs=""
 	head=$(git -C "$1" rev-parse HEAD) || return 1
 	index=$(git -C "$1" ls-files --stage) || return 1
-	diff=$(git -C "$1" diff HEAD --binary --no-ext-diff --no-textconv --no-color) || return 1
+	diff=$(git -C "$1" diff HEAD --binary --no-ext-diff --no-textconv --no-color --submodule=short --ignore-submodules=none) || return 1
 	paths=$(git -C "$1" -c core.quotePath=false ls-files --others --exclude-standard) || return 1
 	[ -n "$paths" ] && { blobs=$(git -C "$1" hash-object --stdin-paths <<<"$paths") || return 1; }
-	printf '%s\n%s\n%s\n%s\n%s\n' "$head" "$index" "$diff" "$paths" "$blobs" | git hash-object --stdin | cut -c1-12
+	printf '%s\n%s\n%s\n%s\n%s\n' "$head" "$index" "$diff" "$paths" "$blobs"
+}
+snapshot() {
+	local all subs sub state refs
+	all=$(work "$1") || return 1
+	subs=$(submodules "$1") || return 1
+	while IFS= read -r sub; do
+		[ -z "$sub" ] && continue
+		state=$(work "$sub") || return 1
+		refs=$(git -C "$sub" for-each-ref --format='%(objectname) %(refname)') || return 1
+		all+=$(printf '\nsubmodule %s\n%s\n%s' "${sub#"$1"/}" "$state" "$(grep -v ' refs/remotes/' <<<"$refs")")
+	done <<<"$subs"
+	printf '%s\n' "$all" | git hash-object --stdin | cut -c1-12
 }
 
 # Main worktree is the first entry; everything else is a candidate.
@@ -201,16 +249,19 @@ while read -r wt; do
 	branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
 
 	# Everything removal would lose: tracked edits, untracked files that git
-	# does not ignore (new source until someone says otherwise), and a detached
-	# HEAD that no branch, tag or remote ref contains.
-	if porcelain=$(git -C "$wt" status --porcelain 2>/dev/null); then
+	# does not ignore (new source until someone says otherwise), a detached
+	# HEAD that no branch, tag or remote ref contains, and a submodule commit
+	# that no remote-tracking ref of that submodule contains. A submodule's
+	# edits count as its gitlink's, whatever `ignore` the repo sets for it.
+	if porcelain=$(git -C "$wt" status --porcelain --ignore-submodules=none 2>/dev/null) \
+		&& sub_ahead=$(submodule_unpushed "$wt" 2>/dev/null); then
 		tracked=$(printf '%s' "$porcelain" | grep -cv '^??')
 		untracked=$(printf '%s' "$porcelain" | grep -c '^??')
 		dirty=""
 		[ "$tracked" -gt 0 ] && dirty="wip:$tracked"
 		[ "$untracked" -gt 0 ] && dirty="${dirty:+$dirty+}untracked:$untracked"
-		[ -z "$branch" ] && [ -z "$(git -C "$wt" for-each-ref --contains "$head" --count=1 refs/heads refs/tags refs/remotes 2>/dev/null)" ] \
-			&& dirty="${dirty:+$dirty+}unreachable"
+		{ [ -z "$branch" ] && [ -z "$(git -C "$wt" for-each-ref --contains "$head" --count=1 refs/heads refs/tags refs/remotes 2>/dev/null)" ]; } \
+			|| [ -n "$sub_ahead" ] && dirty="${dirty:+$dirty+}unreachable"
 		dirty="${dirty:-clean}"
 	else dirty="?"; fi
 	snap=-
