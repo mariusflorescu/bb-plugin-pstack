@@ -52,7 +52,7 @@ When you're back, ask for the run in review form:
 /show-me-your-work catch me up on what you did last night
 ```
 
-Before the skill hands back its summary, it spawns a reviewer on a different model family, when your configured pool has one, to read the trail and the transcript (a same-family reviewer is disclosed in the Attention section), and the reply ends with an Attention section listing what deserves your scrutiny. Read that section first, then the log rows it points at. You're auditing decisions, not re-reading the whole night.
+Before the skill hands back its summary, it spawns a reviewer on a different model family to read the trail and the transcript (from your arena cross-judge pool, or from another provider's models when the pool has only your family; when this host offers no other family, the reply says the review is incomplete instead of reviewing its own work), and the reply ends with an Attention section listing what deserves your scrutiny. Read that section first, then the log rows it points at. You're auditing decisions, not re-reading the whole night.
 
 ## When the night holds a queue, not a task
 
