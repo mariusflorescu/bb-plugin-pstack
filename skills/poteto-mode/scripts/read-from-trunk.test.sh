@@ -3,9 +3,9 @@
 # Builds scratch plugin origins and path-source checkouts that sit on a feature
 # branch with different content, stubs `bb plugin source` with the response
 # shapes BB 0.44 returns, and asserts the script prints trunk, follows trunk when
-# it moves, reads a plugin nested in its repository under its own prefix, reads
-# the published repository from a machine without the server's install path, and
-# fails loud on a source with no trunk.
+# it moves, reads a plugin nested in its repository under its own prefix, fails
+# naming the path on a machine without the server's install path instead of
+# reading any other repository, and fails loud on a source with no trunk.
 # Usage: read-from-trunk.test.sh <path to read-from-trunk.sh>
 set -eu
 script="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -46,16 +46,7 @@ git clone -q nested-origin.git nested-abs
 # server-host/ is the server's filesystem: a nested path install on a feature
 # branch with its own origin, and a bare repository for a git install from a
 # local path. The execution host does not have server-host/ (on_other_host moves
-# it away), so the script reads the published repository that trunk-url names,
-# where the plugin sits at the root. The mapping below keeps that fetch offline.
-published=$(head -n 1 "$(dirname "$script")/trunk-url")
-git init -q --bare -b main published.git
-git init -q -b main pub
-mkdir -p "pub/$(dirname "$playbook")" "pub/$nest/$(dirname "$playbook")"
-echo "published trunk v1" > "pub/$playbook"
-echo "published nested decoy" > "pub/$nest/$playbook"
-commit pub v1
-git -C pub remote add origin "$S/published.git" && git -C pub push -q origin main
+# it away), so the script must fail naming the path and read nothing else.
 git init -q --bare -b main server-origin.git
 git init -q -b main server-host/src
 mkdir -p "server-host/src/$nest/$(dirname "$playbook")"
@@ -90,11 +81,9 @@ git_source() {
 
 fail=0
 run() {
-	# BB turns a scheme-less git source into https://; this maps that host to the scratch origins,
-	# and the published repository to its scratch stand-in.
+	# BB turns a scheme-less git source into https://; this maps that host to the scratch origins.
 	STUB_SOURCE="$1" PATH="$S/stub:$PATH" BB_THREAD_STORAGE="$S/storage" \
-		GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0="url.$S/.insteadOf" GIT_CONFIG_VALUE_0="https://git.example.test/" \
-		GIT_CONFIG_KEY_1="url.$S/published.git.insteadOf" GIT_CONFIG_VALUE_1="$published" \
+		GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$S/.insteadOf" GIT_CONFIG_VALUE_0="https://git.example.test/" \
 		bash "$script" "${2:-$playbook}" 2>"$S/err"
 }
 expect() {
@@ -103,10 +92,18 @@ expect() {
 	if [ "$got" = "$want" ]; then echo "ok   $name"; else echo "FAIL $name got '$got' want '$want'"; fail=1; fi
 }
 expect_fail() {
-	local name="$1" source="$2" want="$3" file="${4:-$playbook}"
-	if run "$source" "$file" >/dev/null; then echo "FAIL $name exited 0"; fail=1
-	elif grep -q "$want" "$S/err"; then echo "ok   $name"
+	local name="$1" source="$2" want="$3" file="${4:-$playbook}" out
+	if out=$(run "$source" "$file"); then echo "FAIL $name exited 0 printing '$out'"; fail=1
+	elif [ -n "$out" ]; then echo "FAIL $name failed but printed '$out'"; fail=1
+	elif grep -qF "$want" "$S/err"; then echo "ok   $name"
 	else echo "FAIL $name stderr '$(cat "$S/err")' lacks '$want'"; fail=1; fi
+}
+# Off the server's host the script stops at the missing path: its one stderr line is
+# that reason, so it neither fetched nor tried another repository in its place.
+expect_missing() {
+	local name="$1" source="$2" path="$3"
+	on_other_host expect_fail "$name" "$source" "$path is not on this machine"
+	if [ "$(wc -l <"$S/err")" -eq 1 ]; then echo "ok   $name stops there"; else echo "FAIL $name went on: '$(cat "$S/err")'"; fail=1; fi
 }
 
 expect "path source reads trunk, not the checkout" "$(path_source "$S/plugin")" "trunk v1"
@@ -127,12 +124,9 @@ expect "git source pinned to a semver range" "$(git_source "git:$S/origin.git@se
 expect "git source with a subdirectory" "$(git_source "git:$S/origin.git" "$S/origin.git@HEAD" sub)" "sub v1"
 
 expect "server path install read on the server's host" "$(path_source "$S/server-host/src/$nest")" "server trunk v1"
-on_other_host expect "server path install read from another host" "$(path_source "$S/server-host/src/$nest")" "published trunk v1"
-if grep -q "@$(git -C "$S/published.git" rev-parse main)\$" "$S/err"; then echo "ok   published revision on stderr"; else echo "FAIL revision '$(cat "$S/err")' is not the published trunk"; fail=1; fi
+expect_missing "server path install read from another host" "$(path_source "$S/server-host/src/$nest")" "path source $S/server-host/src/$nest"
 expect "server git path read on the server's host" "$(git_source "git:$S/server-host/pstack.git" "$S/server-host/pstack.git@HEAD" "$nest")" "server trunk v1"
-on_other_host expect "server git path read from another host" "$(git_source "git:$S/server-host/pstack.git" "$S/server-host/pstack.git@HEAD" "$nest")" "published trunk v1"
-repo_url=$(jq -r '.repository.url | sub("^git\\+"; "")' "$(dirname "$script")/../../../package.json")
-if [ "$published" = "$repo_url" ]; then echo "ok   trunk-url is package.json's repository"; else echo "FAIL trunk-url '$published' is not package.json's '$repo_url'"; fail=1; fi
+expect_missing "server git path read from another host" "$(git_source "git:$S/server-host/pstack.git" "$S/server-host/pstack.git@HEAD" "$nest")" "git source $S/server-host/pstack.git"
 
 expect_fail "path source without origin" "$(path_source "$S/lonely")" "no origin remote"
 expect_fail "npm source" '{"requested":"npm:pstack@1.0.0","resolved":"pstack@1.0.0","integrity":"sha512-x","registry":"https://registry.npmjs.org","engines":{},"installedAt":1,"history":[]}' "no git trunk"

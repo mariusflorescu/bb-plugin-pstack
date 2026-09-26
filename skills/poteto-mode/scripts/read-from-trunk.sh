@@ -6,21 +6,16 @@
 # the source has no readable trunk.
 #
 # BB installs plugins on its server, and a thread may run on another machine. A
-# source at a local path that this machine does not have falls back to the
-# plugin's published repository, named in trunk-url next to this script.
+# source at a local path that this machine does not have exits non-zero naming
+# that path. The script never reads another repository in its place, because a
+# fork or a private copy holds its own policy.
 #
 # Usage: read-from-trunk.sh <path in the pstack repo>
 #   read-from-trunk.sh skills/poteto-mode/playbooks/autopilot-full.md
 set -eu
 file="${1:?usage: read-from-trunk.sh <path in the pstack repo>}"
 die() { echo "read-from-trunk: $*" >&2; exit 1; }
-# The published repository holds the plugin at its root, so no prefix applies.
-published() {
-	url=$(head -n 1 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trunk-url") && [ -n "$url" ] \
-		|| die "$1 is not on this machine and trunk-url names no published repository"
-	sub=
-	echo "read-from-trunk: $1 is not on this machine; reading the published repository" >&2
-}
+missing() { die "$1 is not on this machine (BB installed pstack from its server's filesystem), so its trunk cannot be read here"; }
 
 source_json=$(bb plugin source pstack --json) || die "bb plugin source pstack failed"
 # `requested` is the install source; `resolved` is display text (`<url>@<ref> (<commit>)` for git).
@@ -37,20 +32,17 @@ git:* | http://* | https://*)
 	[ -n "$url" ] || url="$spec"
 	case "$url" in http://* | https://* | /*) ;; [A-Za-z0-9]*) url="https://$url" ;; *) die "source '$requested' has no git url" ;; esac
 	sub=$(jq -r '.subdirectory // empty' <<<"$source_json")
-	case "$url" in /*) [ -e "$url" ] || published "git source $url" ;; esac
+	case "$url" in /*) [ -e "$url" ] || missing "git source $url" ;; esac
 	;;
 *)
 	# A path install stores the plugin's own directory, which may sit below the repository root.
 	dir="${requested#path:}"
-	if [ ! -d "$dir" ]; then
-		published "path source $dir"
-	else
-		url=$(git -C "$dir" remote get-url origin 2>/dev/null) || die "path source $dir has no origin remote, so it has no trunk"
-		top=$(git -C "$dir" rev-parse --show-toplevel)
-		sub=$(git -C "$dir" rev-parse --show-prefix)
-		# git resolves a relative local origin from the repository root, and the fetch below runs in the cache.
-		case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$top/$url" ;; esac ;; esac
-	fi
+	[ -d "$dir" ] || missing "path source $dir"
+	url=$(git -C "$dir" remote get-url origin 2>/dev/null) || die "path source $dir has no origin remote, so it has no trunk"
+	top=$(git -C "$dir" rev-parse --show-toplevel)
+	sub=$(git -C "$dir" rev-parse --show-prefix)
+	# git resolves a relative local origin from the repository root, and the fetch below runs in the cache.
+	case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$top/$url" ;; esac ;; esac
 	;;
 esac
 
