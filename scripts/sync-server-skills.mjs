@@ -52,10 +52,11 @@ const summaries = names
   .map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(description(readFileSync(join(SKILLS, n, "SKILL.md"), "utf8")))},`)
   .join("\n");
 
+// Replacer functions, so a `$&` or `$1` in a description stays literal.
 const src = readFileSync(SERVER, "utf8");
 const next = src
-  .replace(/const SKILL_NAMES = \[[\s\S]*?\] as const;/, `const SKILL_NAMES = [\n${list}\n] as const;`)
-  .replace(/const SKILL_SUMMARIES: Record<SkillName, string> = \{[\s\S]*?\n\};/, `const SKILL_SUMMARIES: Record<SkillName, string> = {\n${summaries}\n};`);
+  .replace(/const SKILL_NAMES = \[[\s\S]*?\] as const;/, () => `const SKILL_NAMES = [\n${list}\n] as const;`)
+  .replace(/const SKILL_SUMMARIES: Record<SkillName, string> = \{[\s\S]*?\n\};/, () => `const SKILL_SUMMARIES: Record<SkillName, string> = {\n${summaries}\n};`);
 
 if (next === src) {
   console.log(`server.ts already lists ${names.length} skills`);

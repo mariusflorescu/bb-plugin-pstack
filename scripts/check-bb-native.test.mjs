@@ -62,11 +62,14 @@ test("BB CLI usage the contract rules out is flagged", () => {
       "If a child never reaches idle, drop it.",
       'Run `bb provider models codex --environment "$BB_ENVIRONMENT_ID" --json`, then `bb provider list --machine mini`.',
       "Run `bb provider models codex --json`.",
-      "Walk `bb thread list --parent-thread <id> --include-hidden`, not `bb thread list --project x`.",
+      "Walk `bb thread list --parent-thread <id> --include-hidden`, then `bb thread list --project x --include-hidden --json | jq .`.",
       "Walk `bb thread list --parent-thread <id>`.",
+      "Mine `bb thread list --project x`, not `bb thread list --parent-thread y --include-hidden`.",
       "Re-read `git show origin/main:pstack/skills/swarm/SKILL.md`, and `git show origin/main:docs/verify.md` for the project.",
       'Pin it with `--base-branch "$(git rev-parse HEAD)"`, or `--base-branch origin/<branch>` elsewhere. Omitting `--base-branch` uses the default.',
       "Stack it with `--new-environment worktree --base-branch <parent branch>`.",
+      "Pass `--base-branch <ref>`; a worker on another machine needs a pushed branch, `origin/<branch>`.",
+      "Give it `--base-branch <baseline>`, resolved once with `git rev-parse HEAD`.",
       "",
     ].join("\n"),
   });
@@ -76,11 +79,35 @@ test("BB CLI usage the contract rules out is flagged", () => {
     [
       "a/SKILL.md:5 [wait-error] a failed child is in status error and bb thread wait exits at once; read bb thread log <id>: If a child never reaches idle, drop it.",
       'a/SKILL.md:7 [provider-host] pass --environment "$BB_ENVIRONMENT_ID" or --machine; without one bb reads the server\'s machine: Run `bb provider models codex --json`.',
-      "a/SKILL.md:9 [hidden-children] add --include-hidden, or hidden children are skipped: Walk `bb thread list --parent-thread <id>`.",
-      "a/SKILL.md:10 [trunk-read] re-read pstack from trunk with poteto-mode's scripts/read-from-trunk.sh skills/<path>: Re-read `git show origin/main:pstack/skills/swarm/SKILL.md`, and `git show origin/main:docs/verify.md` for the project.",
-      'a/SKILL.md:12 [base-branch] pin a worktree to "$(git rev-parse HEAD)" after committing, or to a pushed origin/<branch>; a local branch moves: Stack it with `--new-environment worktree --base-branch <parent branch>`.',
+      "a/SKILL.md:9 [hidden-children] add --include-hidden, or hidden threads are skipped: Walk `bb thread list --parent-thread <id>`.",
+      "a/SKILL.md:10 [hidden-children] add --include-hidden, or hidden threads are skipped: Mine `bb thread list --project x`, not `bb thread list --parent-thread y --include-hidden`.",
+      "a/SKILL.md:11 [trunk-read] re-read pstack from trunk with poteto-mode's scripts/read-from-trunk.sh skills/<path>: Re-read `git show origin/main:pstack/skills/swarm/SKILL.md`, and `git show origin/main:docs/verify.md` for the project.",
+      'a/SKILL.md:13 [base-branch] pin a worktree to "$(git rev-parse HEAD)" after committing, or to a pushed origin/<branch>; a local branch moves: Stack it with `--new-environment worktree --base-branch <parent branch>`.',
       "",
-      "0/1 skills clean, 5 findings",
+      "0/1 skills clean, 6 findings",
+      "",
+    ].join("\n")
+  );
+});
+
+test("in a shell script only a bb thread list call needs --include-hidden, not a comment or message naming it", () => {
+  const run = check({
+    "server.ts": 'const SKILL_NAMES = [\n  "a",\n] as const;\n',
+    "skills/a/SKILL.md": "---\nname: a\ndescription: x\n---\n",
+    "skills/a/scripts/walk.sh": [
+      "# `bb thread list --parent-thread` skips hidden threads",
+      'kids=$(bb thread list --parent-thread "$1" --include-hidden --json) || fail "bb thread list failed"',
+      "all=$(bb thread list --json) || fail 'bb thread list --json failed'",
+      "",
+    ].join("\n"),
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(
+    run.stdout,
+    [
+      "a/scripts/walk.sh:3 [hidden-children] add --include-hidden, or hidden threads are skipped: all=$(bb thread list --json) || fail 'bb thread list --json failed'",
+      "",
+      "0/1 skills clean, 1 findings",
       "",
     ].join("\n")
   );

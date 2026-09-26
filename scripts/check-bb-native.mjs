@@ -28,9 +28,17 @@ const RULES = [
   { id: "cursor-ui", re: /\bcomposer\b|background agent|\bagent mode\b/i, hint: "name the bb surface (thread, child thread, worktree)" },
   { id: "persona-dir", re: /\.\.\/(\.\.\/)?agents\//, hint: "personas live in the owning skill's references/" },
   { id: "wait-error", re: /never reach(es|ed)? idle|wait (times|timed) out/i, hint: "a failed child is in status error and bb thread wait exits at once; read bb thread log <id>" },
-  { id: "hidden-children", re: /bb thread list\b(?=.*--parent-thread)(?!.*--include-hidden)/, hint: "add --include-hidden, or hidden children are skipped" },
+  // Each listing on its own: the flag must sit in the same command, before a closing backtick or shell separator.
+  // In a shell script only a call counts, not a mention in a comment or a quoted message.
+  {
+    id: "hidden-children",
+    re: /bb thread list\b(?![^`|;&\n]*--include-hidden)/,
+    shell: /^(?!\s*#)(?:[^"']*(?:"[^"]*"|'[^']*'))*[^"']*?\bbb thread list\b(?![^`|;&\n]*--include-hidden)/,
+    hint: "add --include-hidden, or hidden threads are skipped",
+  },
   { id: "trunk-read", re: /origin\/main:pstack\//, hint: "re-read pstack from trunk with poteto-mode's scripts/read-from-trunk.sh skills/<path>" },
-  { id: "base-branch", re: /--base-branch(?![ =]("\$\(git rev-parse HEAD\)"|origin\/)|`)/, hint: "pin a worktree to \"$(git rev-parse HEAD)\" after committing, or to a pushed origin/<branch>; a local branch moves" },
+  // A line that itself names the pinned form ("$(git rev-parse HEAD)" or origin/<branch>) already says how to pin.
+  { id: "base-branch", re: /--base-branch(?!`)/, unless: /rev-parse HEAD|origin\//, hint: "pin a worktree to \"$(git rev-parse HEAD)\" after committing, or to a pushed origin/<branch>; a local branch moves" },
   { id: "provider-host", re:/bb provider (list|models)\b(?!.*--(environment|machine|host)\b)/, hint: "pass --environment \"$BB_ENVIRONMENT_ID\" or --machine; without one bb reads the server's machine" },
 ];
 
@@ -94,11 +102,13 @@ function checkSkill(name) {
     if (!TEXT.has(extname(file))) continue;
     const rel = relative(SKILLS, file);
     const isMarkdown = extname(file) === ".md";
+    const isShell = [".sh", ""].includes(extname(file));
     const lines = readFileSync(file, "utf8").split("\n");
     lines.forEach((line, i) => {
       for (const rule of RULES) {
         if (!isMarkdown && CODE_EXEMPT.has(rule.id)) continue;
-        if (rule.re.test(line)) findings.push(`${rel}:${i + 1} [${rule.id}] ${rule.hint}: ${line.trim().slice(0, 140)}`);
+        const re = (isShell && rule.shell) || rule.re;
+        if (re.test(line) && !rule.unless?.test(line)) findings.push(`${rel}:${i + 1} [${rule.id}] ${rule.hint}: ${line.trim().slice(0, 140)}`);
       }
       if (isMarkdown) for (const finding of skillNameFindings(line)) findings.push(`${rel}:${i + 1} ${finding}`);
     });
