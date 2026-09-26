@@ -16,14 +16,14 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 
 ### 1. Locate the active transcript
 
-The active transcript is the current conversation in this thread's BB log. A `bb thread clear`, or the provider resetting its conversation, starts a new conversation in the same thread, and the log keeps the earlier ones. Reviewers read the log themselves, so hand them the thread ID (`$BB_THREAD_ID`) and the event sequence the current conversation starts after, not a copy. Children this thread spawned keep their own logs, and so do the children they spawned. List every descendant at every depth now, before step 2 makes the reviewers children too. From this skill's directory:
+The active transcript is the current conversation in this thread's BB log. A `bb thread clear`, or the provider resetting its conversation, starts a new conversation in the same thread, and the log keeps the earlier ones. Reviewers read the log themselves, so hand them the thread ID (`$BB_THREAD_ID`) and the event sequence the current conversation starts after, not a copy. Children this thread spawned keep their own logs, and so do the children they spawned. List the ones the current conversation delegated to, at every depth, now, before step 2 makes the reviewers children too. From this skill's directory:
 
 ```bash
 ../show-me-your-work/scripts/run-start.sh
-../show-me-your-work/scripts/descendants.sh "$BB_THREAD_ID"
+../show-me-your-work/scripts/descendants.sh "$BB_THREAD_ID" <seq>
 ```
 
-The first prints that sequence, `0` when the thread was never cleared. The second prints one `thread<TAB>parent<TAB>title` line per descendant, hidden ones included, and nothing when there are none. The transcript is this thread's events after that sequence plus those descendants. Do not use `bb thread search` or open any other thread. That reads private chats from unrelated work.
+The first prints that sequence, `0` when the thread was never cleared. Pass it to the second as `<seq>`. The second prints one `thread<TAB>parent<TAB>after-seq<TAB>title` line per descendant, hidden ones included, and nothing when there are none. A clear keeps the children of earlier conversations, so it lists a child only if the current conversation made it (after-seq `0`) or messaged it with `bb thread tell` (after-seq just before the first such message), and it looks under each listed child the same way, from when that child's part began. The transcript is this thread's events after that sequence plus each listed descendant's events after its after-seq. Do not use `bb thread search` or open any other thread. That reads private chats from unrelated work.
 
 If the log does not load, write a tight digest of the session and pass that instead.
 
@@ -60,7 +60,7 @@ For each approved Accepted item, follow the Routing field exactly:
 - `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its trigger check with near-miss prompts.
 - `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`. Do not invent the shape ad hoc.
 
-A routing may name a skill without a path. `bb skill list --environment "$BB_ENVIRONMENT_ID" --json` maps each name to its `filePath` in this workspace. For a plugin skill, find the plugin whose `rootDir` in `bb plugin list --json` holds that path, then read `bb plugin source <plugin-id> --json`. A `path:` source is the plugin's own checkout, so edit it there. A `git:` or `npm:` source is an install cache that the next update replaces, so edit the repository or package it names. A `builtin:` plugin ships with BB, so its change goes to Backlog.
+A routing may name a skill without a path. `bb skill list --environment "$BB_ENVIRONMENT_ID" --json` maps each name to its `filePath` in this workspace. A `scope` `plugin` skill is a file its plugin installed, so find its source before you edit it. A `pluginId` that `bb plugin list --json` lists is a BB plugin: read `bb plugin source <plugin-id> --json`. A `path:` source is the plugin's own checkout, so edit it there. A `git:` or `npm:` source is an install cache that the next update replaces, so edit the repository or package it names. A `builtin:` plugin ships with BB and cannot be edited. Any other `pluginId` is a provider plugin, which `bb plugin source` does not know, and its skills are named `<pluginId>:<skill>`. The record's `provider` installed it from a marketplace into its own cache (`plugins/cache/<marketplace>/<plugin>/<version>/` in the `filePath`), which the provider's next plugin update replaces. `claude plugin marketplace list --json` (provider `claude-code`) or `codex plugin marketplace list --json` (provider `codex`) names that marketplace's source, and the plugin's entry in the marketplace's manifest says where in it, or in which other repository, the plugin lives. Edit it there. When the source is `builtin:` or the user does not maintain what it names, offer a user or project skill that carries the change instead, or send the change to Backlog. A user or project skill overrides a BB plugin skill of the same name. A provider plugin skill keeps loading in its provider, so the new skill sits beside it and does not replace it.
 
 If your environment ships a SKILL.md validator, run it on every touched skill before declaring done. Skip this step if it doesn't.
 
