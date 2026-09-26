@@ -122,11 +122,10 @@ const SKILL_PATHS: Partial<Record<SkillName, readonly string[]>> = {
   "typescript-best-practices": ["**/*.ts", "**/*.tsx"],
 };
 
-// Providers that keep a `disable-model-invocation` skill away from the model
-// themselves. Others (Codex) are told instead: hiding a skill from Codex is no
-// option, because BB hands it `/<name>` as plain text and Codex matches that
-// only against the skills it can see.
-const HONORS_USER_ONLY = new Set(["claude-code"]);
+// How a user or a brief runs a skill by name on each provider. BB passes the
+// text through as typed; Claude Code runs `/<name>`, and Codex resolves
+// `$<name>` itself, including a skill hidden from its list by agents/openai.yaml.
+const SKILL_PREFIX: Record<string, string> = { "claude-code": "/", codex: "$" };
 
 // Default role mapping. The `models` setting overrides it one role at a time:
 // a role the setting leaves out keeps its line here.
@@ -190,9 +189,8 @@ const PATH_POINTER = "Before you read or edit a file, load each pstack skill who
 
 function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
-  const userOnly = HONORS_USER_ONLY.has(providerId)
-    ? "Most are user-invoked only, so your skill tool will not load them"
-    : "Most are user-invoked only: load one only when the user, your brief or another pstack skill names it";
+  const prefix = SKILL_PREFIX[providerId] ?? "/";
+  const userOnly = `Most are user-invoked only, so they are not in your skill list${prefix === "/" ? "" : `. Users run them here as ${prefix}<name>`}`;
   return `## pstack delegation rules
 
 You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:

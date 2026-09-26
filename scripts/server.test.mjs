@@ -58,12 +58,12 @@ test("every provider is told to load a paths skill for matching files", async ()
   }
 });
 
-test("a provider that ignores disable-model-invocation is told when to load a user-only skill", async () => {
+test("user-only skills are out of every skill list, and Codex is told its users run them with $", async () => {
   const codex = await instructions("", { provider: "codex" });
   const claude = await instructions("", { provider: "claude-code" });
-  assert.ok(codex.includes("Most are user-invoked only: load one only when the user, your brief or another pstack skill names it."));
-  assert.ok(claude.includes("Most are user-invoked only, so your skill tool will not load them."));
-  assert.equal(claude.includes("load one only when"), false);
+  assert.ok(codex.includes("Most are user-invoked only, so they are not in your skill list. Users run them here as $<name>. Read a named skill"));
+  assert.ok(claude.includes("Most are user-invoked only, so they are not in your skill list. Read a named skill"));
+  assert.equal(claude.includes("$<name>"), false);
 });
 
 test("a switched-off skill gets no paths line", async () => {

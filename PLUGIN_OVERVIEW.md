@@ -18,7 +18,7 @@ Install the plugin, then run `/setup-pstack`. It reads the providers and models 
 
 Every thread receives the pstack delegation rules: each explorer, reviewer, runner or worker is a bb child thread on the provider, model and effort you chose for its role, never the provider's built-in subagent tool. Panels mix providers, so a Claude thread can get a GPT reviewer and the other way round.
 
-Most skills are user-invoked (`disable-model-invocation`; Codex, which ignores the flag, is told the same in its instructions), so they run when you type the name. typescript-best-practices loads itself for `.ts` and `.tsx` files. Settings shows a master switch and one switch per skill.
+Most skills are user-invoked (`disable-model-invocation`, plus `agents/openai.yaml` for Codex), so they cost no context until you run one: `/<name>` in a Claude Code thread, `$<name>` in a Codex thread. typescript-best-practices loads itself for `.ts` and `.tsx` files. Settings shows a master switch and one switch per skill.
 
 ## Requirements
 

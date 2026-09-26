@@ -141,27 +141,31 @@ test("in a shell script only a bb thread list call needs --include-hidden, not a
   );
 });
 
-test("no skill is hidden from Codex, paths cannot be user-only, and frontmatter must be YAML", () => {
+test("Codex's policy file must match disable-model-invocation, paths cannot be user-only, and frontmatter must be YAML", () => {
   const policy = "policy:\n  allow_implicit_invocation: false\n";
   const run = check({
-    "server.ts": 'const SKILL_NAMES = [\n  "broken",\n  "hidden",\n  "plain",\n  "user-only",\n  "pathy",\n  "stuck",\n] as const;\n',
+    "server.ts": 'const SKILL_NAMES = [\n  "broken",\n  "hidden",\n  "leaky",\n  "orphan",\n  "plain",\n  "pathy",\n  "stuck",\n] as const;\n',
     "skills/broken/SKILL.md": "---\nname: broken\ndescription: a: b: c\n---\n",
     "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true\n---\n",
     "skills/hidden/agents/openai.yaml": policy,
+    "skills/leaky/SKILL.md": "---\nname: leaky\ndescription: x\ndisable-model-invocation: true # explicit only\n---\n",
+    "skills/orphan/SKILL.md": "---\nname: orphan\ndescription: x\n---\n",
+    "skills/orphan/agents/openai.yaml": policy,
     "skills/plain/SKILL.md": "---\nname: plain\ndescription: x\n---\n",
     "skills/plain/agents/openai.yaml": "interface:\n  display_name: Plain\n",
-    "skills/user-only/SKILL.md": "---\nname: user-only\ndescription: x\ndisable-model-invocation: true # explicit only\n---\n",
     "skills/pathy/SKILL.md": '---\nname: pathy\ndescription: x\npaths: ["**/*.ts"]\n---\n',
     "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths:\n- "**/*.ts"\ndisable-model-invocation: true\n---\n',
+    "skills/stuck/agents/openai.yaml": policy,
   });
   assert.equal(run.status, 1, run.stderr);
   const [broken, ...rest] = run.stdout.split("\n");
   assert.match(broken, /^broken \[yaml\] invalid SKILL\.md frontmatter or agents\/openai\.yaml: /);
   assert.deepEqual(rest, [
-    "hidden/agents/openai.yaml [codex-hidden] BB sends /hidden to Codex as plain text, so a skill hidden from Codex's list cannot be run by slash; remove allow_implicit_invocation: false (BB-NATIVE.md)",
-    "stuck/SKILL.md [paths-user-only] Claude Code will not load a disable-model-invocation skill for the model, so its paths rule could never fire; drop disable-model-invocation (BB-NATIVE.md)",
+    "leaky/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+    "orphan/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+    "stuck/SKILL.md [paths-user-only] neither provider lets the model load a user-only skill, so its paths rule could never fire; drop disable-model-invocation (BB-NATIVE.md)",
     "",
-    "3/6 skills clean, 3 findings",
+    "3/7 skills clean, 4 findings",
     "",
   ]);
 });
