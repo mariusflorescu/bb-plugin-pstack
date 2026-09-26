@@ -21,7 +21,7 @@ Walk through what each line buys you:
 - "done means..." turns the goal into checks every iteration can run.
 - "fresh worktree off `<base>`" keeps the run from colliding with anything else you have open.
 - "don't ask me before committing" pre-answers the permission the agent would otherwise block on.
-- "keep going until done" hands the waiting to the [Autonomous run playbook](../../skills/poteto-mode/playbooks/autonomous-run.md). It re-checks the finish condition on events or on a heartbeat. An event wake is a background `bb thread wait` on a child thread. A heartbeat is a one-shot `bb automation` (`--in <duration>`) that re-prompts this thread.
+- "keep going until done" hands the waiting to the [Autonomous run playbook](../../skills/poteto-mode/playbooks/autonomous-run.md). It re-checks the finish condition on events or on a heartbeat. An event wake is a background command that exits on the event, such as `bb thread wait` on a child thread, backed by a one-shot `bb automation` (`--in <duration>`) that re-prompts this thread if the event never comes. With no event to watch, the heartbeat is a recurring `bb automation` (`--cron` with `--timezone`) that re-prompts this thread until the run ends.
 - The escape hatch lets it stop at a genuine dead end and write up why, which beats eight hours of creative goal reinterpretation.
 
 Because you'll review this work after stepping away, `/poteto-mode` routes it through [`/figure-it-out`](../../skills/figure-it-out/SKILL.md), which designs the run's phases before any code and wires in the decision log.
@@ -52,7 +52,7 @@ When you're back, ask for the run in review form:
 /show-me-your-work catch me up on what you did last night
 ```
 
-Before the skill hands back its summary, it spawns a reviewer on a different model family to read the trail and the transcript, and the reply ends with an Attention section listing what deserves your scrutiny. Read that section first, then the log rows it points at. You're auditing decisions, not re-reading the whole night.
+Before the skill hands back its summary, it spawns a reviewer on a different model family, when your configured pool has one, to read the trail and the transcript (a same-family reviewer is disclosed in the Attention section), and the reply ends with an Attention section listing what deserves your scrutiny. Read that section first, then the log rows it points at. You're auditing decisions, not re-reading the whole night.
 
 ## When the night holds a queue, not a task
 
