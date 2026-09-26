@@ -122,8 +122,11 @@ const SKILL_PATHS: Partial<Record<SkillName, readonly string[]>> = {
   "typescript-best-practices": ["**/*.ts", "**/*.tsx"],
 };
 
-// Providers that read a skill's `paths` frontmatter natively.
-const NATIVE_PATHS_PROVIDERS = new Set(["claude-code"]);
+// Providers that act on a skill's `disable-model-invocation` and `paths`
+// frontmatter themselves. Others (Codex) get both as instructions instead:
+// hiding a skill from Codex is no option, because BB hands it `/<name>` as
+// plain text and Codex matches that only against the skills it can see.
+const READS_SKILL_FRONTMATTER = new Set(["claude-code"]);
 
 // Default role mapping. The `models` setting overrides it one role at a time:
 // a role the setting leaves out keeps its line here.
@@ -183,11 +186,13 @@ function pathLines(skills: readonly PathSkill[]): string {
 }
 
 // Fixed length, for when one line per skill does not fit.
-const PATH_POINTER =
-  "Some pstack skills list file globs under `paths` in their SKILL.md frontmatter. Before you read or edit a file, load each of them whose globs match it.\n\n";
+const PATH_POINTER = "Before you read or edit a file, load each pstack skill whose SKILL.md `paths` globs match it.\n\n";
 
 function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
+  const userOnly = READS_SKILL_FRONTMATTER.has(providerId)
+    ? "Most are user-invoked only, so your skill tool will not load them"
+    : "Most are user-invoked only: load one only when the user, your brief or another pstack skill names it";
   return `## pstack delegation rules
 
 You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
@@ -202,7 +207,7 @@ A child that fails is in status error, and bb thread wait exits at once with an 
 
 Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
 
-pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
+pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 
 ${pathSection}${roleSection}`;
 }
@@ -211,7 +216,7 @@ ${pathSection}${roleSection}`;
 // where to read it, role models last, so BB's truncation never cuts an entry
 // in half. A provider that reads `paths` itself gets no path lines.
 export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[]): string {
-  const pathSections = NATIVE_PATHS_PROVIDERS.has(providerId) || pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
+  const pathSections = READS_SKILL_FRONTMATTER.has(providerId) || pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
   const roleSections = [
     `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`,
     `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`,

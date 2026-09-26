@@ -57,6 +57,14 @@ test("a provider that ignores paths frontmatter is told to load the skill for ma
   assert.equal((await instructions("", { provider: "claude-code" })).includes("Before you read or edit"), false);
 });
 
+test("a provider that ignores disable-model-invocation is told when to load a user-only skill", async () => {
+  const codex = await instructions("", { provider: "codex" });
+  const claude = await instructions("", { provider: "claude-code" });
+  assert.ok(codex.includes("Most are user-invoked only: load one only when the user, your brief or another pstack skill names it."));
+  assert.ok(claude.includes("Most are user-invoked only, so your skill tool will not load them."));
+  assert.equal(claude.includes("load one only when"), false);
+});
+
 test("a switched-off skill gets no paths line", async () => {
   const text = await instructions("", { provider: "codex", off: ["typescript-best-practices"] });
   assert.equal(text.includes("Before you read or edit"), false);
@@ -70,11 +78,11 @@ test("path lines too long to fit give way to one fixed sentence before the role 
   const roomy = delegationRules("codex", "gpt-6-astra", "", many);
   assert.ok(roomy.length <= 4096, `${roomy.length} characters`);
   assert.equal(roomy.includes("path-skill-0"), false);
-  assert.match(roomy, /load each of them whose globs match it\.\n\nRole models \(provider \/ model @effort\):\n/);
+  assert.match(roomy, /load each pstack skill whose SKILL\.md `paths` globs match it\.\n\nRole models \(provider \/ model @effort\):\n/);
 
   const tight = delegationRules("codex", "gpt-6-astra", long, many);
   assert.ok(tight.length <= 4096, `${tight.length} characters`);
-  assert.match(tight, /load each of them whose globs match it\.\n\nThe role models are too long to inline here\. Run bb plugin config pstack --json\./);
+  assert.match(tight, /load each pstack skill whose SKILL\.md `paths` globs match it\.\n\nThe role models are too long to inline here\. Run bb plugin config pstack --json\./);
 
   const few = delegationRules("codex", "gpt-6-astra", long, many.slice(0, 1));
   assert.ok(few.includes("load the path-skill-0 skill.\n\nThe role models are too long"), few.slice(-600));
