@@ -62,6 +62,8 @@ If a send can fail, append the same JSON to a local log. Drain that log on the n
 
 Agents on this computer share one Tailscale node. Do not create a second hostname on a node that is already online.
 
+Check the OS with `uname -s`. On macOS (`Darwin`) without `tailscale` on the PATH, the CLI is inside the app. Use `TAILSCALE_BE_CLI=1 /Applications/Tailscale.app/Contents/MacOS/Tailscale` wherever this skill says `tailscale`. The variable stops the binary from opening the app window. When neither exists, Tailscale is not installed. `Failed to load preferences` means a command sandbox blocked the app, not that it is missing. Rerun outside the sandbox.
+
 If `tailscale status` shows an online node, skip install. Read the hostname from `tailscale status`. Read the IPv4 address from `tailscale ip -4`. Give the user both URLs:
 
 - `http://<hostname>.<tailnet>.ts.net:<port>`
@@ -69,7 +71,9 @@ If `tailscale status` shows an online node, skip install. Read the hostname from
 
 Use HTTP. Do not add HTTPS unless the user asks.
 
-If Tailscale is not installed, install it:
+On macOS the Tailscale app owns the node. Do not run the install script there. It only opens the App Store page, then prints "Installation complete!" anyway. If the app is missing, tell the user to install it from https://tailscale.com/download/mac, open it, and finish its onboarding. If the app is installed but no node is online, tell the user to log in and connect in the Tailscale app. Wait for their reply, then check `tailscale status` again.
+
+On Linux, if Tailscale is not installed, install it:
 
 ```
 curl -fsSL https://tailscale.com/install.sh | sudo sh
@@ -81,12 +85,20 @@ Then start the node with a short hostname:
 sudo tailscale up --hostname=<short-name> --accept-dns=false --ssh=false
 ```
 
-The command prints a login URL. Send that URL to the user. The user approves the machine in the browser. Do not ask for Tailscale credentials. Do not type them.
+Run them in one BB terminal, joined with `&&` when you install. If `sudo` asks for a password, tell the user to type it in that terminal. Never type it for them.
+
+```
+bb terminal create --thread "$BB_THREAD_ID" --title tailscale --command "<commands>"
+bb terminal wait <terminal-id> --contains "To authenticate, visit" --from-start --timeout 5m
+bb terminal output <terminal-id>
+```
+
+`tailscale up` prints a login URL. Send that URL to the user. The user approves the machine in the browser. Do not ask for Tailscale credentials. Do not type them.
+
+If the login URL expires, run `tailscale up` again and send the new URL.
 
 After the node is online, confirm with `tailscale status` and `tailscale ip -4`.
 Probe `http://<100.x.x.x>:<port>/` and expect HTTP 200.
-
-If the login URL expires, run `tailscale up` again and send the new URL.
 
 ## Or share it through BB Connect
 
