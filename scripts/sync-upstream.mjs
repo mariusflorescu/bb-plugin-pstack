@@ -12,10 +12,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, lstatSync, readlinkSync, symlinkSync, chmodSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PIN_FILE = join(ROOT, "UPSTREAM");
 const ALIASED = ["arena", "tdd", "blast-radius"];
+// Kept byte for byte as upstream wrote it, so the aliases do not apply.
+const VERBATIM = new Set(["UPSTREAM-README.md"]);
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 const ABSENT = "000000";
@@ -69,11 +72,11 @@ const isText = (path) => /\.(md|ts|mjs|sh|json|txt|lock)$/.test(path) || !/\.[a-
 
 // One side of a three-way merge: { mode, content } or null when the file does
 // not exist on that side. A symlink's content is its target.
-function upstreamSide(mode, sha, upstreamPath, text) {
+function upstreamSide(mode, sha, upstreamPath, aliased) {
   if (mode === ABSENT) return null;
   if (!SUPPORTED.has(mode)) throw new Error(`${upstreamPath}: unsupported upstream mode ${mode}`);
   const blob = gitBuffer("cat-file", "blob", sha);
-  return { mode, content: text ? Buffer.from(alias(blob.toString("utf8"))) : blob };
+  return { mode, content: aliased ? Buffer.from(alias(blob.toString("utf8"))) : blob };
 }
 
 function localSide(abs) {
@@ -181,9 +184,9 @@ function main() {
         dropped.push(change.path);
         continue;
       }
-      const text = isText(ours);
-      const base = upstreamSide(change.baseMode, change.baseSha, change.path, text);
-      const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, text);
+      const aliased = isText(ours) && !VERBATIM.has(ours);
+      const base = upstreamSide(change.baseMode, change.baseSha, change.path, aliased);
+      const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, aliased);
       plan.push({ ours, ...mergeFile(ours, base, localSide(join(ROOT, ours)), theirs, scratch) });
     }
   } finally {

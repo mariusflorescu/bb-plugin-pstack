@@ -177,7 +177,7 @@ for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"
 
 A child that fails is in status error, and bb thread wait exits at once with an unreachable error instead of timing out. Read why with bb thread log <id> --format minimal. If its model or effort was rejected, pick a same-family model and a listed effort from bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json, respawn that seat with the same brief, and say so in your report. Any other failure is a dropout.
 
-Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, take the first pool entry whose model family differs from yours.
+Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
 
 pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). Most are user-invoked only, so your skill tool will not load them. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 

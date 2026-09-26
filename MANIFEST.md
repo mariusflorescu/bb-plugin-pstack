@@ -31,7 +31,7 @@ bb ships each `skills/<name>/` directory into a thread and nothing else. Anythin
 | `tdd` | `pstack-tdd` | Same, `tdd` |
 | `blast-radius` | `pstack-blast-radius` | Same, `blast-radius` |
 
-The sync applies the aliases to upstream's base and new versions before merging, so alias renames never conflict.
+The sync applies the aliases to upstream's base and new versions before merging, so alias renames never conflict. `UPSTREAM-README.md` is exempt and stays byte for byte upstream's.
 
 ## Adaptations
 
@@ -39,6 +39,6 @@ The sync applies the aliases to upstream's base and new versions before merging,
 
 ## Verification
 
-`node scripts/check-bb-native.mjs` checks every skill: no Cursor mechanisms in shipped text, no BB CLI usage the contract rules out (child lists without `--include-hidden`, provider queries without a host, pstack trunk reads without `read-from-trunk.sh`, waits described as timing out), frontmatter `name` equal to the directory, relative links resolving inside `skills/`, bold skill names resolving to a skill directory (a short principle name to `principle-<name>/`), and `server.ts` listing exactly the skill directories.
+`node scripts/check-bb-native.mjs` checks every skill: no Cursor mechanisms in shipped text, no BB CLI usage the contract rules out (child lists without `--include-hidden`, provider queries without a host, pstack trunk reads without `read-from-trunk.sh`, waits described as timing out, a `--base-branch` other than `"$(git rev-parse HEAD)"` or `origin/<branch>`), frontmatter `name` equal to the directory, relative links resolving inside `skills/`, bold skill names resolving to a skill directory (a short principle name to `principle-<name>/`), and `server.ts` listing exactly the skill directories.
 
-`node --test scripts/` runs the sync script against throwaway repos (merges, local deletions, file modes, symlinks, aborting before any write) renders the injected delegation rules (per-role overrides, `inherit-parent`, the 4096-character limit), and runs the checker on a tree with broken bold skill names.
+`node --test scripts/` runs the sync script against throwaway repos (merges, local deletions, file modes, symlinks, the verbatim README, aborting before any write), checks `UPSTREAM-README.md` against the pinned upstream README, renders the injected delegation rules (per-role overrides, `inherit-parent`, the 4096-character limit), runs the checker on a tree with broken bold skill names, and regenerates the `server.ts` skill list. The script tests run from directories with spaces in their paths.

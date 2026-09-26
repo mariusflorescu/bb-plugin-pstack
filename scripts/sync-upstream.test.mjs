@@ -7,8 +7,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, symlinkSync, lstatSync, readlinkSync, existsSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-const SCRIPT = new URL("./sync-upstream.mjs", import.meta.url).pathname;
+const REPO = fileURLToPath(new URL("..", import.meta.url));
+const SCRIPT = join(REPO, "scripts/sync-upstream.mjs");
 const ENV = {
   ...process.env,
   GIT_CONFIG_GLOBAL: "/dev/null",
@@ -48,7 +50,7 @@ function commit(root, files, prefix = "") {
 }
 
 function sync({ base, upstream, ours }) {
-  const dir = mkdtempSync(join(tmpdir(), "sync-upstream-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "sync-upstream test with spaces-"));
   after(() => rmSync(dir, { recursive: true, force: true }));
   const up = join(dir, "upstream");
   const me = join(dir, "ours");
@@ -115,6 +117,25 @@ test("edits on both sides of a text file merge, with the pstack- aliases applied
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /^merged +skills\/m\/SKILL\.md$/m);
   assert.equal(readFileSync(at("skills/m/SKILL.md"), "utf8"), "A\nb\nc\nd\nsee **pstack-arena**\n");
+});
+
+test("the upstream README lands verbatim, without the pstack- aliases", () => {
+  const { run, at } = sync({
+    base: { "README.md": "run /arena\n" },
+    upstream: { "README.md": "run /arena or [/tdd](./skills/tdd/SKILL.md)\n" },
+    ours: { "UPSTREAM-README.md": "run /arena\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^updated +UPSTREAM-README\.md$/m);
+  assert.equal(readFileSync(at("UPSTREAM-README.md"), "utf8"), "run /arena or [/tdd](./skills/tdd/SKILL.md)\n");
+});
+
+test("this repo's UPSTREAM-README.md is the pinned upstream README, byte for byte", (t) => {
+  const pin = readFileSync(join(REPO, "UPSTREAM"), "utf8");
+  const blob = `${pin.match(/^sha=(.*)$/m)[1]}:${pin.match(/^path=(.*)$/m)[1]}/README.md`;
+  const upstream = spawnSync("git", ["cat-file", "blob", blob], { cwd: REPO, encoding: "utf8" });
+  if (upstream.status !== 0) return t.skip(`${blob} is not fetched here; node scripts/sync-upstream.mjs fetches upstream`);
+  assert.equal(readFileSync(join(REPO, "UPSTREAM-README.md"), "utf8"), upstream.stdout);
 });
 
 test("an entry it cannot apply aborts before any write and keeps the pin", () => {

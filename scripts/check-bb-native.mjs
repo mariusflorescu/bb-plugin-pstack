@@ -5,8 +5,9 @@
 // Exits 1 when any skill has a finding.
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, dirname, resolve, relative, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS = join(ROOT, "skills");
 
 // Cursor mechanisms that must not survive in shipped skill text. Each row is
@@ -29,6 +30,7 @@ const RULES = [
   { id: "wait-error", re: /never reach(es|ed)? idle|wait (times|timed) out/i, hint: "a failed child is in status error and bb thread wait exits at once; read bb thread log <id>" },
   { id: "hidden-children", re: /bb thread list\b(?=.*--parent-thread)(?!.*--include-hidden)/, hint: "add --include-hidden, or hidden children are skipped" },
   { id: "trunk-read", re: /origin\/main:pstack\//, hint: "re-read pstack from trunk with poteto-mode's scripts/read-from-trunk.sh skills/<path>" },
+  { id: "base-branch", re: /--base-branch(?![ =]("\$\(git rev-parse HEAD\)"|origin\/)|`)/, hint: "pin a worktree to \"$(git rev-parse HEAD)\" after committing, or to a pushed origin/<branch>; a local branch moves" },
   { id: "provider-host", re:/bb provider (list|models)\b(?!.*--(environment|machine|host)\b)/, hint: "pass --environment \"$BB_ENVIRONMENT_ID\" or --machine; without one bb reads the server's machine" },
 ];
 
