@@ -39,7 +39,7 @@ Use the helper `scripts/log.sh <logfile> <phase> <decision> <why> <evidence> <re
 
 Log decision points and checkpoints, not every action: a fork chosen, a unit completed with its verification result, a pivot or revert with its trigger, a blocker surfaced, a gate fixed. For loop runs, one row per iteration. Skip the trivial and self-evident.
 
-A run is one agent conversation, including its later turns and any summary of it. A pickup, a replacement agent, or a new chat starts a new run. When a run adds to a log that already has rows, its first row has phase `start`, and so does its first row after another run's `start` row. So a run that comes back to a log in a later turn first reads the log's last rows to see whether another run wrote since. A `start` row names the `ts` range of the rows before it that this run did not write, and its evidence names this run by its thread ID (`$BB_THREAD_ID`). Use phase `start` for nothing else.
+A run is one agent conversation, including its later turns and any summary of it. A pickup, a replacement agent, or a new chat starts a new run. When a run adds to a log that already has rows, its first row has phase `start`, and so does its first row after another run's `start` row. So a run that comes back to a log in a later turn first reads the log's last rows to see whether another run wrote since. A `start` row names the `ts` range of the rows before it that this run did not write, and its evidence names this run as `<thread ID>@<seq>`: this thread's ID (`$BB_THREAD_ID`) and the event sequence the run starts after, which `scripts/run-start.sh` prints. A `bb thread clear` starts a new run in the same thread, so the ID alone does not name the run. Use phase `start` for nothing else.
 
 ## Where it lives
 
@@ -54,7 +54,7 @@ Commit it only when the work is ambitious enough that a reviewer needs the trail
 
 ## Audit the log against the transcript
 
-At the end of the run, before handing back, check the log told the truth. Save this run's transcript as raw events (`bb thread log --self --format json --all > "$BB_THREAD_STORAGE/transcript.json"`) and check against those. The verbose timeline can drop a command's output, so it cannot confirm evidence. Work this run delegated sits in its children's logs (`bb thread list --parent-thread "$BB_THREAD_ID" --include-hidden --json`), read the same way. Read nothing beyond this thread and its children. Other threads hold unrelated private chats. Walk this run's rows against what actually happened. Each stretch of them begins at one of this run's `start` rows, or at the first row if this run created the log, and ends at the next `start` row of another run:
+At the end of the run, before handing back, check the log told the truth. Save this run's transcript as raw events (`bb thread log --self --format json --all --after-seq <seq> > "$BB_THREAD_STORAGE/transcript.json"`, with this run's `<seq>` from `scripts/run-start.sh`) and check against those. The verbose timeline can drop a command's output, so it cannot confirm evidence. Work this run delegated sits in the logs of this thread's descendants, which `scripts/descendants.sh "$BB_THREAD_ID"` lists at every depth (children, their children, hidden ones included), read the same way. Read nothing beyond this thread and that list. Other threads hold unrelated private chats. Walk this run's rows against what actually happened. Each stretch of them begins at one of this run's `start` rows (evidence naming this run's `<thread ID>@<seq>`), or at the first row if this run created the log, and ends at the next `start` row of another run:
 
 - Check that every row maps to a real decision or action.
 - Check that each row's evidence resolves and shows what the row claims.
@@ -64,14 +64,14 @@ Correct the log, not the story. The audit never edits or removes a row, even an 
 
 ## Cross-model review of the trail
 
-Before handing back, spawn a child thread, preferably on a different model family from the one that did the work. Per the pstack delegation rules, take the first `arena cross-judge pool` entry whose model family differs from yours. If none does, take the first entry and disclose in the Attention section that the reviewer shares your family. Self-review is not a substitute. Its brief says read-only and gives the log's path and this thread's ID. The reviewer reads the audit trail and the run's transcript (`bb thread log <id> --format json --all`), then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
+Before handing back, spawn a child thread on a different model family from the one that did the work. Per the pstack delegation rules, take the first `arena cross-judge pool` entry whose model family differs from yours. If the pool has none, pick a model of another family from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json` across the providers `bb provider list --environment "$BB_ENVIRONMENT_ID" --json` marks `available`, at its `defaultReasoningEffort`. If this host offers no other family, do not run a same-family review, and report in the Attention section that the cross-model review is incomplete. Self-review is not a substitute. Its brief says read-only and gives the log's path, this run's `<thread ID>@<seq>` and the descendant list from the audit. The reviewer reads the audit trail, the run's transcript (`bb thread log <thread ID> --format json --all --after-seq <seq>`) and the listed descendants' logs, and no other thread, then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
 
 - Decisions logged with weak or absent evidence.
 - Verification steps skipped or claimed without proof in the transcript.
 - Choices that look risky in hindsight (premature, scope-creeping, papering over a symptom).
 - Gaps the user would otherwise miss on a casual skim.
 
-Every reply for a run that produced a trail ends with an "Attention" section. Lead with the reviewer's model on its own line (`reviewed by <model>`, plus `(same family)` when no pool entry differed from yours), then list each flag pointing to specific rows or moments. "No flags" is a valid value. The model name is not.
+Every reply for a run that produced a trail ends with an "Attention" section. Lead with the reviewer's model on its own line (`reviewed by <model>`), or, when this host offers no other family, with `cross-model review incomplete: no other model family on this host`, then list each flag pointing to specific rows or moments. "No flags" is a valid value. The model name is not.
 
 ## Reviewing the trail
 
