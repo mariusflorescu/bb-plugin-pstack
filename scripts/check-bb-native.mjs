@@ -84,13 +84,15 @@ const SLASH_SKILL = /(?:^|[\s`(])\/([a-z][a-z0-9-]*)(?=[`\s.,;:)]|$)/gm;
 const FENCE = /^\s*(```|~~~)/;
 const NEW_BLOCK = /^(\s*(\d+\.|[-*+])\s|#)/;
 
-// The lines that say how a brief starts: from the matching line to the end of
-// its paragraph or list item, plus a fenced block that follows it (after blank
-// lines).
-function briefWindow(lines, from) {
-  let end = from;
-  const continues = (line) => line.trim() !== "" && !FENCE.test(line) && !NEW_BLOCK.test(line);
-  while (end + 1 < lines.length && continues(lines[end + 1])) end++;
+// The lines that say how a brief starts: the whole paragraph or list item that
+// holds the matching line, plus a fenced block that follows it (after blank
+// lines). Returns where the block starts, so one block is reported once.
+function briefWindow(lines, at) {
+  const inBlock = (line) => line.trim() !== "" && !FENCE.test(line);
+  let start = at;
+  while (start > 0 && !NEW_BLOCK.test(lines[start]) && inBlock(lines[start - 1])) start--;
+  let end = at;
+  while (end + 1 < lines.length && inBlock(lines[end + 1]) && !NEW_BLOCK.test(lines[end + 1])) end++;
   let next = end + 1;
   while (next < lines.length && lines[next].trim() === "") next++;
   if (next < lines.length && FENCE.test(lines[next])) {
@@ -98,18 +100,21 @@ function briefWindow(lines, from) {
     while (end + 1 < lines.length && !FENCE.test(lines[end + 1])) end++;
     end = Math.min(end + 1, lines.length - 1);
   }
-  return lines.slice(from, end + 1).join("\n");
+  return { start, text: lines.slice(start, end + 1).join("\n") };
 }
 
 function briefPrefixFindings(lines) {
   const findings = [];
+  const seen = new Set();
   lines.forEach((line, i) => {
     if (!BRIEF_START.test(line)) return;
     const window = briefWindow(lines, i);
-    const names = new Set([...window.matchAll(SLASH_SKILL)].map((m) => m[1]));
+    if (seen.has(window.start)) return;
+    seen.add(window.start);
+    const names = new Set([...window.text.matchAll(SLASH_SKILL)].map((m) => m[1]));
     for (const name of names) {
       if (!existsSync(join(SKILLS, name, "SKILL.md"))) continue;
-      if (new RegExp(`\\$${name}(?![a-z0-9-])`).test(window)) continue;
+      if (new RegExp(`\\$${name}(?![a-z0-9-])`).test(window.text)) continue;
       findings.push({ line: i + 1, text: `[brief-prefix] a brief runs /${name} only on Claude Code; also give $${name} for a Codex child` });
     }
   });

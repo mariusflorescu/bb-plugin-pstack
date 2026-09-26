@@ -195,6 +195,8 @@ test("a brief that runs a skill gives both the Claude Code and the Codex syntax"
       "",
       "1. Each brief starting with `/b` or `$b`.",
       "2. Then run `/b` yourself.",
+      "3. Use `$b` for a Codex child; for a Claude Code child,",
+      "   start its brief with `/b`.",
       "",
       "The worker runs `/b`, and its brief says where to write.",
       "",
