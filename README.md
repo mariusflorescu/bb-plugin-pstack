@@ -15,7 +15,9 @@ Requires bb 0.43 or newer.
 ## Get started
 
 1. Run `/setup-pstack`. It reads the providers and models this host offers (`bb provider models`) and writes the plugin's `models` setting: one `role: provider / model @effort` line per pstack role.
-2. Use `/poteto-mode` for anything that needs rigor. It picks one of 23 playbooks and runs the other skills as the steps need them.
+2. Use `/poteto-mode` (`$poteto-mode` in a Codex thread) for anything that needs rigor. It picks one of 23 playbooks and runs the other skills as the steps need them.
+
+A Codex thread runs every skill as `$<name>` where this README and the skills write `/<name>`.
 
 ## How it works on bb
 

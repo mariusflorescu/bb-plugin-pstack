@@ -191,7 +191,7 @@ function rules(providerId: string, model: string, pathSection: string, roleSecti
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   const prefix = SKILL_PREFIX[providerId] ?? "/";
   const userOnly = `Most are user-invoked only, so they are not in your skill list${
-    prefix === "/" ? "" : `. Here they run as ${prefix}<name>: answer a /<name> you cannot find by asking for ${prefix}<name>`
+    prefix === "/" ? "" : `. pstack text writes /<name>; here say and run ${prefix}<name>, and ask a user who types /<name> for ${prefix}<name>`
   }`;
   return `## pstack delegation rules
 
@@ -205,7 +205,7 @@ for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"
 
 A child that fails is in status error, and bb thread wait exits at once with an unreachable error instead of timing out. Read why with bb thread log <id> --format minimal. If its model or effort was rejected, pick a same-family model and a listed effort from bb provider models <provider> --environment <env> --json, where <env> is the child's .thread.environmentId in bb thread show <id> --json, not yours, respawn that seat with the same brief, and say so in your report. Otherwise check bb provider-retry status <id>. A retry listed there (overload or usage limit) restarts the child by itself: wait for it again after its time, or before handing its seat or files to another child run bb provider-retry cancel <id> and bb thread stop <id>. If none is listed, or that plugin is disabled, it is a dropout.
 
-Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
+Children report back here; follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
 
 pstack skills name each other in bold, like **unslop**. ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 

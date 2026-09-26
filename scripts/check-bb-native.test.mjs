@@ -180,8 +180,24 @@ test("a brief that runs a skill gives both the Claude Code and the Codex syntax"
       "description: x",
       "---",
       "Start its brief with `/b` on its own line.",
-      "Start its brief with `/b` for a Claude Code child and `$b` for a Codex child.",
+      "",
+      "Start its brief with `/b` for a Claude Code child",
+      "and `$b` for a Codex child.",
+      "",
+      "Start its brief with `/b`, or `$b-other` on Codex.",
+      "",
+      "Start the brief with:",
+      "",
+      "```text",
+      "/b",
+      "Do the task.",
+      "```",
+      "",
+      "1. Each brief starting with `/b` or `$b`.",
+      "2. Then run `/b` yourself.",
+      "",
       "The worker runs `/b`, and its brief says where to write.",
+      "",
       "Each brief starting with `/unknown-skill` is not ours.",
       "",
     ].join("\n"),
@@ -189,6 +205,13 @@ test("a brief that runs a skill gives both the Claude Code and the Codex syntax"
   assert.equal(run.status, 1, run.stderr);
   assert.equal(
     run.stdout,
-    ["a/SKILL.md:5 [brief-prefix] a brief runs /b only on Claude Code; also give $b for a Codex child", "", "1/2 skills clean, 1 findings", ""].join("\n")
+    [
+      "a/SKILL.md:5 [brief-prefix] a brief runs /b only on Claude Code; also give $b for a Codex child",
+      "a/SKILL.md:10 [brief-prefix] a brief runs /b only on Claude Code; also give $b for a Codex child",
+      "a/SKILL.md:12 [brief-prefix] a brief runs /b only on Claude Code; also give $b for a Codex child",
+      "",
+      "1/2 skills clean, 3 findings",
+      "",
+    ].join("\n")
   );
 });

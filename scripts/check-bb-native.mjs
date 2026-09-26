@@ -75,17 +75,45 @@ function skillNameFindings(line) {
 }
 
 // A brief that makes a child run a skill must use the child's provider syntax:
-// Claude Code runs `/<name>`, Codex `$<name>` (BB-NATIVE.md). A line that
-// starts a brief with `/<skill>` must also give the `$<skill>` form.
+// Claude Code runs `/<name>`, Codex `$<name>` (BB-NATIVE.md). Where the text
+// says how a brief starts, its paragraph and a fenced brief right after it
+// must give `$<skill>` for every `/<skill>` they run.
 const BRIEF_START =
   /\b(start|begin)(s|ning|ing)?\s+(its|the|each|a|every|that)?\s*brief\b|\bbriefs?\s+(start|begin)(s|ning|ing)?\b|\bbriefs?\b[^.]{0,40}\bfirst line\b/i;
+const SLASH_SKILL = /(?:^|[\s`(])\/([a-z][a-z0-9-]*)(?=[`\s.,;:)]|$)/gm;
+const FENCE = /^\s*(```|~~~)/;
+const NEW_BLOCK = /^(\s*(\d+\.|[-*+])\s|#)/;
 
-function briefPrefixFindings(line) {
-  if (!BRIEF_START.test(line)) return [];
-  return [...line.matchAll(/`\/([a-z][a-z0-9-]*)`/g)]
-    .map((m) => m[1])
-    .filter((name) => existsSync(join(SKILLS, name, "SKILL.md")) && !line.includes(`$${name}`))
-    .map((name) => `[brief-prefix] a brief runs /${name} only on Claude Code; also give $${name} for a Codex child`);
+// The lines that say how a brief starts: from the matching line to the end of
+// its paragraph or list item, plus a fenced block that follows it (after blank
+// lines).
+function briefWindow(lines, from) {
+  let end = from;
+  const continues = (line) => line.trim() !== "" && !FENCE.test(line) && !NEW_BLOCK.test(line);
+  while (end + 1 < lines.length && continues(lines[end + 1])) end++;
+  let next = end + 1;
+  while (next < lines.length && lines[next].trim() === "") next++;
+  if (next < lines.length && FENCE.test(lines[next])) {
+    end = next;
+    while (end + 1 < lines.length && !FENCE.test(lines[end + 1])) end++;
+    end = Math.min(end + 1, lines.length - 1);
+  }
+  return lines.slice(from, end + 1).join("\n");
+}
+
+function briefPrefixFindings(lines) {
+  const findings = [];
+  lines.forEach((line, i) => {
+    if (!BRIEF_START.test(line)) return;
+    const window = briefWindow(lines, i);
+    const names = new Set([...window.matchAll(SLASH_SKILL)].map((m) => m[1]));
+    for (const name of names) {
+      if (!existsSync(join(SKILLS, name, "SKILL.md"))) continue;
+      if (new RegExp(`\\$${name}(?![a-z0-9-])`).test(window)) continue;
+      findings.push({ line: i + 1, text: `[brief-prefix] a brief runs /${name} only on Claude Code; also give $${name} for a Codex child` });
+    }
+  });
+  return findings;
 }
 
 function walk(dir) {
@@ -157,9 +185,10 @@ function checkSkill(name) {
         const re = (isShell && rule.shell) || rule.re;
         if (re.test(line) && !rule.unless?.test(line)) findings.push(`${rel}:${i + 1} [${rule.id}] ${rule.hint}: ${line.trim().slice(0, 140)}`);
       }
-      if (isMarkdown) for (const finding of [...skillNameFindings(line), ...briefPrefixFindings(line)]) findings.push(`${rel}:${i + 1} ${finding}`);
+      if (isMarkdown) for (const finding of skillNameFindings(line)) findings.push(`${rel}:${i + 1} ${finding}`);
     });
     if (!isMarkdown) continue;
+    for (const { line, text } of briefPrefixFindings(lines)) findings.push(`${rel}:${line} ${text}`);
     for (const target of relativeTargets(lines.join("\n"))) {
       const abs = resolve(dirname(file), target.replace(/[.,;:]+$/, ""));
       if (!abs.startsWith(SKILLS + "/")) findings.push(`${rel} [link-escape] ${target} points outside skills/ (not shipped to threads)`);

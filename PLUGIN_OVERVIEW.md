@@ -1,6 +1,6 @@
 ## Getting started
 
-Install the plugin, then run `/setup-pstack`. It reads the providers and models this host offers and writes one `provider / model @effort` per pstack role into the plugin's `models` setting. After that, `/poteto-mode` is the way in.
+Install the plugin, then run `/setup-pstack` (in a Codex thread, skills run as `$<name>`: `$setup-pstack`). It reads the providers and models this host offers and writes one `provider / model @effort` per pstack role into the plugin's `models` setting. After that, `/poteto-mode` (`$poteto-mode` on Codex) is the way in.
 
 ## What you get
 
