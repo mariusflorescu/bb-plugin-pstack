@@ -214,23 +214,23 @@ if [ "$bb_known" = yes ]; then
 	# sees activity later the same day), how many of those have a pinned or
 	# running thread in their ancestry, the environments outside this path
 	# that archiving its threads would reach, and the threads whose logs name
-	# it. BB's archive
-	# walks children, lifecycle dependents and hidden forks, through archived
-	# threads too, so the walk uses both lists. This thread is running only
-	# because it runs the audit, so it holds the worktree it works in but not
-	# the worktrees of its descendants.
+	# it. BB's archive walks children, lifecycle dependents and hidden forks,
+	# through archived threads too, so the cascade walks down those links over
+	# both lists and the ancestry walks up them: a hidden fork is its source's
+	# background work, so a pinned or running source holds the fork's worktree.
+	# This thread is running only because it runs the audit, so it holds the
+	# worktree it works in but not the worktrees of its descendants.
 	usage=$(jq -rn --arg wts "$wts" --arg mentions "$mentions" --arg self "${BB_THREAD_ID:-}" --argjson canon "$canon" \
 		--argjson live "$live" --argjson archived "$archived" "$within"'
 		def running: (.status | IN("pending", "starting", "active", "stopping"))
 			or ((.queuedWork // "none") != "none")
 			or (([(.activity // {})[]] | add // 0) > 0);
+		def owners: [.parentThreadId, .lifecycleOwnerThreadId,
+			(if .visibility == "hidden" then .sourceThreadId else null end)] | map(select(. != null)) | unique;
 		($live + $archived) as $all
 		| ($all | INDEX(.id)) as $by
-		| (reduce $all[] as $t ({};
-			reduce ([$t.parentThreadId, $t.lifecycleOwnerThreadId,
-				(if $t.visibility == "hidden" then $t.sourceThreadId else null end)]
-				| map(select(. != null)) | unique)[] as $p (.; .[$p] += [$t.id]))) as $kids
-		| def lineage: limit(1000; recurse(($by[.parentThreadId // ""], $by[.lifecycleOwnerThreadId // ""]) // empty));
+		| (reduce $all[] as $t ({}; reduce ($t | owners)[] as $p (.; .[$p] += [$t.id]))) as $kids
+		| def lineage: limit(1000; recurse(owners[] | $by[.] // empty));
 		def cascade: limit(100000; recurse($kids[.id][]? | $by[.] // empty));
 		(reduce ($mentions | split("\n")[] | select(. != "") | split("\t")) as $m ({}; .[$m[0]] += [$m[1]])) as $named
 		| $wts | split("\n")[] | select(. != "") as $wt

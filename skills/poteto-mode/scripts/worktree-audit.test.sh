@@ -23,7 +23,7 @@ wt() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && echo "$1" > "
 wt_at_main() { git worktree add -q -b "$1" "$S/wt-$1"; }
 wt merged && git merge -q --ff-only merged && git push -q origin main
 for name in wip inuse running child recent; do wt "$name"; done
-for name in hidden parent leaf new renamed staged byname byslash bytilde kid nested nestpin gonesub sib byproj bymain; do wt_at_main "$name"; done
+for name in hidden parent leaf new renamed staged byname byslash bytilde kid nested nestpin gonesub sib byproj bymain forkpin forkrun forkkid forkvis forkself; do wt_at_main "$name"; done
 mkdir -p "$S/wt-nested/scripts" "$S/wt-nestpin/packages/app" "$S/wt-sib-x" "$S/repo/tools"
 git worktree add -q -b spaced "$S/wt-sp ace"
 ln -s "$S" "$S.link"
@@ -54,7 +54,7 @@ envrow() { printf '{"id":"env_%s","projectId":"%s","hostId":"%s","path":"%s"}' "
 {
 	printf '[%s' "$(envrow far "$S/wt-merged" proj_far host_far)"
 	printf ',%s' "$(envrow main "$S/repo")" "$(envrow far2 "$S/elsewhere" proj_far)"
-	for name in merged inuse running child recent hidden parent leaf kid; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
+	for name in merged inuse running child recent hidden parent leaf kid forkpin forkrun forkkid forkvis forkself; do printf ',%s' "$(envrow "$name" "$S/wt-$name")"; done
 	# Attached below a worktree's root, one of them at a directory since deleted.
 	printf ',%s' "$(envrow nested "$S/wt-nested/scripts")" "$(envrow nestpin "$S/wt-nestpin/packages/app" proj_nest)" \
 		"$(envrow gonesub "$S/wt-gonesub/dist/")" "$(envrow sibx "$S/wt-sib-x")" "$(envrow tools "$S/repo/tools" proj_tools)"
@@ -85,7 +85,15 @@ thread() { # id env status pinnedAt parent updatedAt [visibility] [source] [proj
 		"$(thread thr_np env_nestpin idle "$old" null "$old" visible null proj_nest)" \
 		"$(thread thr_g env_gonesub active null null "$old")" \
 		"$(thread thr_s env_sibx active null null "$old")" \
-		"$(thread thr_t env_tools idle null null "$old" visible null proj_tools)"
+		"$(thread thr_t env_tools idle null null "$old" visible null proj_tools)" \
+		"$(thread thr_srcpin env_main idle "$old" null "$old")" \
+		"$(thread thr_srcrun env_main active null null "$old")" \
+		"$(thread thr_fkpin env_forkpin idle null null "$old" hidden '"thr_srcpin"')" \
+		"$(thread thr_fkrun env_forkrun idle null null "$old" hidden '"thr_srcrun"')" \
+		"$(thread thr_fkmid env_main idle null null "$old" hidden '"thr_srcpin"')" \
+		"$(thread thr_fkkid env_forkkid idle null '"thr_fkmid"' "$old" hidden)" \
+		"$(thread thr_fkvis env_forkvis idle null null "$old" visible '"thr_srcpin"')" \
+		"$(thread thr_fkself env_forkself idle null null "$old" hidden '"thr_self"')"
 	printf ']\n'
 } > "$S/stub/threads.json"
 jq -c --argjson t "$old" '.[] | select(.id == "thr_p") | .id = "thr_mid" | .environmentId = "env_gone" | .parentThreadId = "thr_p" | .archivedAt = $t' \
@@ -180,8 +188,16 @@ check "$out" byproj MENTIONS=thr_np BUCKET=hold-in-use
 check "$out" bymain MENTIONS=thr_t
 assert "reads the logs of a project attached below the main worktree" 'grep -qx thr_t "$S/stub/logs-read" 2>/dev/null'
 
-echo "# the auditing thread holds the worktree it works in, not its children's"
+echo "# a hidden fork is its source's background work, as BB's archive treats it: a pinned or running source holds the fork's worktree, and the fork's children's"
+check "$out" forkpin CASCADE=- "LAST_THREAD=*,pinned" BUCKET=hold-in-use
+check "$out" forkrun CASCADE=- "LAST_THREAD=*,running" BUCKET=hold-in-use
+check "$out" forkkid "LAST_THREAD=*,pinned" BUCKET=hold-in-use
+echo "# a visible fork is an independent thread, which BB's archive does not reach"
+check "$out" forkvis "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=safe
+
+echo "# the auditing thread holds the worktree it works in, not its children's or its hidden forks'"
 check "$out" kid "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=safe
+check "$out" forkself "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=safe
 check "$(run BB_THREAD_ID=thr_a)" merged "LAST_THREAD=*,running" BUCKET=hold-in-use
 
 echo "# unknown BB state holds every row: bb down, one log unreadable, no BB environment"
