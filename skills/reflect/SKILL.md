@@ -16,13 +16,14 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 
 ### 1. Locate the active transcript
 
-The active transcript is this thread's BB log. Reviewers read it themselves, so hand them the thread ID (`$BB_THREAD_ID`), not a copy. Children this thread spawned keep their own logs, and so do the children they spawned. List every descendant at every depth now, before step 2 makes the reviewers children too. From this skill's directory:
+The active transcript is the current conversation in this thread's BB log. A `bb thread clear`, or the provider resetting its conversation, starts a new conversation in the same thread, and the log keeps the earlier ones. Reviewers read the log themselves, so hand them the thread ID (`$BB_THREAD_ID`) and the event sequence the current conversation starts after, not a copy. Children this thread spawned keep their own logs, and so do the children they spawned. List every descendant at every depth now, before step 2 makes the reviewers children too. From this skill's directory:
 
 ```bash
+../show-me-your-work/scripts/run-start.sh
 ../show-me-your-work/scripts/descendants.sh "$BB_THREAD_ID"
 ```
 
-It prints one `thread<TAB>parent<TAB>title` line per descendant, hidden ones included, and nothing when there are none. The transcript is this thread plus those descendants. Do not use `bb thread search` or open any other thread. That reads private chats from unrelated work.
+The first prints that sequence, `0` when the thread was never cleared. The second prints one `thread<TAB>parent<TAB>title` line per descendant, hidden ones included, and nothing when there are none. The transcript is this thread's events after that sequence plus those descendants. Do not use `bb thread search` or open any other thread. That reads private chats from unrelated work.
 
 If the log does not load, write a tight digest of the session and pass that instead.
 
@@ -36,7 +37,7 @@ Spawn three child threads at once, one per lens, with `bb thread spawn --parent-
 | Tooling | `reflect tooling` | `references/tooling-reviewer.md` |
 | Divergent | `reflect judgment, divergent, synthesizer` | `references/divergent-reviewer.md` |
 
-Pass each template verbatim, substituting the thread ID, the descendant lines from step 1 (or `none`), or the digest where marked. Each reviewer's findings are its final message. Collect all three in one background command with `bb thread wait <id>` then `bb thread output <id>`.
+Pass each template verbatim, substituting the thread ID, the start sequence and the descendant lines from step 1 (or `none`), or the digest where marked. Each reviewer's findings are its final message. Collect all three in one background command with `bb thread wait <id>` then `bb thread output <id>`.
 
 ### 3. Synthesize
 

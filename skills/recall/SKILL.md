@@ -15,7 +15,7 @@ Your context lives in two records. Your own chat history holds what you did and 
 Your chat history is BB's thread record.
 
 - `scripts/project-threads.sh <days> [topic]` lists this project's threads updated in the last `<days>` days, hidden and archived ones included, newest first, skipping the current thread. With a topic it keeps only threads whose raw log mentions it, with a match count. Don't use `bb thread search`. It searches every project and has no project filter.
-- `bb thread log <id> --format verbose --all` reads a whole thread as a timeline. Without `--all` it shows only the newest 20 user turns. The raw events (`--format json --all`) are the only view that keeps every command and its output.
+- `bb thread log <id> --format verbose --all` reads a thread as a timeline, starting at its latest `bb thread clear`. Without `--all` it shows only the newest 20 user turns. The raw events (`--format json --all`) are the only view that keeps every command and its output, and the conversations before a clear.
 - `bb thread output <id>` gives a thread's final answer.
 
 1. Classify, then route. One specific prior chat to resume is the `session-pickup` playbook, not this. Turning habits into a durable skill is `automate-me`. A human-readable summary of your work is a different task. Recall loads working context across recent chats before you act. If the user already gave you a full state capsule (paths, branch, the change), use it and skip the mining.

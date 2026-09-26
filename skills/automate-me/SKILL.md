@@ -19,16 +19,24 @@ Run `bb skill list --environment "$BB_ENVIRONMENT_ID" --json` and look for a `<h
 - Update the existing skill (default for repeat runs)
 - Start fresh (rare, ask why before doing it)
 
+A plugin skill (`scope` `plugin`) is a file BB installed, so find its source before you update it. Find the plugin whose `rootDir` in `bb plugin list --json` holds that `filePath`, then read `bb plugin source <plugin-id> --json`. A `path:` source is the plugin's own checkout, so edit it there. A `git:` or `npm:` source is an install cache that the next update replaces, so edit the repository or package it names. A `builtin:` plugin ships with BB and cannot be edited. When the source is `builtin:` or the user does not maintain it, offer a `<handle>-mode` user or project skill instead, which overrides the plugin skill of the same name.
+
 Update mode changes the rest of the flow:
-- Step 1 mines only history since the skill was last edited (`git log -1 --format=%cI <path>`).
+- Step 1 mines only history since the skill was last edited (`git log -1 --format=%ct <path>` on the file in its source, epoch seconds).
 - Step 2 asks what's changed or missing, not what to capture from zero.
-- Step 4 edits the existing file in place. Preserve sections the user hasn't contradicted. Revise ones with new evidence. Add new sections only for genuinely new rules.
+- Step 4 edits the existing file in place, in the plugin's source for a plugin skill. Preserve sections the user hasn't contradicted. Revise ones with new evidence. Add new sections only for genuinely new rules.
 
 ### 1. Mine their history
 
 Scope the history before fanning out. Use only the current project (`$BB_PROJECT_ID`). Don't read other projects' threads. That crosses project boundaries and reads private chats from unrelated projects. `../recall/scripts/project-threads.sh <days>` lists its threads updated in the last `<days>` days, hidden and archived ones included, newest first.
 
-Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by the `updated` column into 3 slices so each has enough material). Each slice's brief names its time range and thread IDs. The child reads each of those threads whole with `bb thread log <id> --format verbose --all`, where the user's follow-up turns carry most corrections and stated preferences, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
+Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by the `updated` column into 3 slices so each has enough material). Each slice's brief names its thread IDs and the window's start in epoch seconds (now minus the window, or the skill's last edit in update mode). The child reads each thread's raw events within the window, dropping streamed deltas, which the completed items repeat:
+
+```bash
+bb thread log <id> --format json --all | jq --argjson since <start> '[.[] | select(.createdAt >= $since * 1000 and (.type | test("[Dd]elta$") | not))]' > "$BB_THREAD_STORAGE/<id>.json"
+```
+
+Not the timeline formats (`--format verbose`): after a `bb thread clear` they start at the clear, and the conversations before it in the window disappear. The user's follow-up turns (`client/turn/requested` events) carry most corrections and stated preferences. The child looks for the signals below and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
 
 - Response preferences (length, tone, format, "dumb it down" corrections)
 - Delegation habits (subagents, models, specialized workflows, parallelism)
@@ -66,7 +74,7 @@ The **poteto-mode** skill shows the shape. Read it for granularity. Don't copy i
 
 Use the `skill-creator` skill to author the skill. Placement:
 
-- Path: keep an existing mode skill where it lives. For a new mode, default to `.bb/skills/<handle>-mode/SKILL.md` in the project (or `~/.bb/skills/<handle>-mode/SKILL.md` if the user prefers a personal skill).
+- Path: keep an existing mode skill where it lives, in the source step 0 found for a plugin skill. For a new mode, default to `.bb/skills/<handle>-mode/SKILL.md` in the project (or `~/.bb/skills/<handle>-mode/SKILL.md` if the user prefers a personal skill).
 - Handle: the user's first name or chosen identifier.
 - Frontmatter `description`: trigger on their name + `/<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
 - Frontmatter formatting: follow `skill-creator`'s frontmatter contract. Keep `description` as one YAML scalar. Quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.
@@ -80,7 +88,7 @@ Show the draft to the user and take feedback. Expect multiple iterations. Cut ru
 
 ### 6. Land it
 
-For a project skill, work in a worktree off main. Commit and open a PR. Don't push to main directly. A user skill in `~/.bb/skills/` sits outside the repo, so write it in place.
+For a project skill, work in a worktree off main. Commit and open a PR. Don't push to main directly. A plugin skill lands the same way, in the repository its source names. A user skill in `~/.bb/skills/` sits outside the repo, so write it in place.
 
 ## Guardrails
 
