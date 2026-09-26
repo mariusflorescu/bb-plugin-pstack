@@ -80,6 +80,23 @@ submodules() {
 	done < <(awk -F'\t' '$1 ~ /^160000 / { print $2 }' <<<"$index" | sort -u)
 }
 
+# Every change removal would lose under $1, one `status --porcelain` line per
+# tracked edit and per untracked file, from $1 and from each submodule at any
+# depth. Each repository reports its own with explicit flags, since a setting in
+# any of them (status.showUntrackedFiles, diff.ignoreSubmodules, a submodule's
+# ignore) otherwise reads its work as clean, and a top-level flag does not reach
+# a nested submodule. A gitlink counts only when its submodule's HEAD moved; its
+# content counts in the submodule.
+changes() {
+	local subs sub
+	git -C "$1" status --porcelain --untracked-files=all --ignore-submodules=dirty || return 1
+	subs=$(submodules "$1") || return 1
+	while IFS= read -r sub; do
+		[ -z "$sub" ] && continue
+		git -C "$sub" status --porcelain --untracked-files=all --ignore-submodules=dirty || return 1
+	done <<<"$subs"
+}
+
 # A commit in a submodule under $1 that no remote-tracking ref of that
 # submodule contains, if any.
 submodule_unpushed() {
@@ -251,9 +268,10 @@ while read -r wt; do
 	# Everything removal would lose: tracked edits, untracked files that git
 	# does not ignore (new source until someone says otherwise), a detached
 	# HEAD that no branch, tag or remote ref contains, and a submodule commit
-	# that no remote-tracking ref of that submodule contains. A submodule's
-	# edits count as its gitlink's, whatever `ignore` the repo sets for it.
-	if porcelain=$(git -C "$wt" status --porcelain --ignore-submodules=none 2>/dev/null) \
+	# that no remote-tracking ref of that submodule contains. Edits and files
+	# count one by one in the worktree and in each submodule, whatever git
+	# settings say to hide.
+	if porcelain=$(changes "$wt" 2>/dev/null) \
 		&& sub_ahead=$(submodule_unpushed "$wt" 2>/dev/null); then
 		tracked=$(printf '%s' "$porcelain" | grep -cv '^??')
 		untracked=$(printf '%s' "$porcelain" | grep -c '^??')

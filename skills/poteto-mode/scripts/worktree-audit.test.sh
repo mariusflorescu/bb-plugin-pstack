@@ -31,7 +31,7 @@ git worktree add -q --detach "$S/wt-detached" && (cd "$S/wt-detached" && echo d 
 echo edited >> "$S/wt-wip/a.txt"
 echo edited >> "$S/wt-leaf/a.txt"
 echo 'export const x = 1' > "$S/wt-new/new.ts"
-mkdir "$S/wt-renamed/notes" && echo draft > "$S/wt-renamed/notes/a.md"
+mkdir "$S/wt-renamed/notes" && echo draft > "$S/wt-renamed/notes/a.md" && echo todo > "$S/wt-renamed/notes/todo.md"
 echo scratch > "$S/wt-inuse/scratch.md"
 (cd "$S/wt-staged" && echo staged1 > a.txt && git add a.txt && echo final > a.txt)
 echo scratch > "$S/wt-running/scratch.md"
@@ -158,8 +158,9 @@ echo "# archiving a clean worktree's threads must not retire another worktree"
 check "$out" parent CASCADE=env_leaf BUCKET=hold-cascade
 check "$out" leaf BUCKET=hold-wip
 
-echo "# untracked files and commits no ref contains are work removal loses"
+echo "# untracked files, counted one by one, and commits no ref contains are work removal loses"
 check "$out" new DIRTY=untracked:1 BUCKET=hold-wip
+check "$out" renamed DIRTY=untracked:2 BUCKET=hold-wip
 check "$out" detached DIRTY=unreachable BUCKET=hold-wip
 
 echo "# environments come from this machine; logs come from this repo's projects, however a path is spelled"
@@ -206,7 +207,7 @@ mv "$S/wt-renamed/notes/a.md" "$S/wt-renamed/notes/b.md"
 (cd "$S/wt-staged" && echo staged2 > a.txt && git add a.txt && echo final > a.txt)
 snap=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
 	bash "$audit" "$S/repo" "$S/wt-wip" "$S/wt-new" "$S/wt-renamed" "$S/wt-detached" "$S/wt-leaf" "$S/wt-staged" 2>&1)
-for kv in wip=wip:1 new=untracked:1 renamed=untracked:1 detached=unreachable leaf=wip:1 staged=wip:1; do check "$snap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
+for kv in wip=wip:1 new=untracked:1 renamed=untracked:2 detached=unreachable leaf=wip:1 staged=wip:1; do check "$snap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
 for name in wip new renamed detached staged; do
 	assert "$name snapshot changes with its content" '[ "$(field "$snap" "$name" SNAPSHOT)" != "$(field "$out" "$name" SNAPSHOT)" ]'
 done
@@ -216,7 +217,7 @@ echo "# a submodule's work counts at any depth, whatever ignore it has, and so d
 check "$out" subclean DIRTY=clean SNAPSHOT=- BUCKET=review
 hex=$(printf '[0-9a-f]%.0s' 1 2 3 4 5 6 7 8 9 10 11 12)
 check "$out" subdirty DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
-check "$out" subnew DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
+check "$out" subnew DIRTY=untracked:1 "SNAPSHOT=$hex" BUCKET=hold-wip
 check "$out" subignored DIRTY=wip:1 "SNAPSHOT=$hex" BUCKET=hold-wip
 check "$out" subcommit DIRTY=unreachable "SNAPSHOT=$hex" BUCKET=hold-wip
 echo "# a submodule it cannot read holds the row"
@@ -231,7 +232,7 @@ echo 'rm -rf ~' > "$S/wt-subnew/outer/notes.md"
 subsnap=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
 	bash "$audit" "$S/repo" "$S/wt-subdirty" "$S/wt-subnew" "$S/wt-subcommit" 2>&1)
 assert "every gitlink and its diff read the same" '[ "$(for name in subdirty subnew subcommit; do gitlink "$name"; done)" = "$before" ]'
-for kv in subdirty=wip:1 subnew=wip:1 subcommit=unreachable; do check "$subsnap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
+for kv in subdirty=wip:1 subnew=untracked:1 subcommit=unreachable; do check "$subsnap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
 for name in subdirty subnew subcommit; do
 	assert "$name snapshot changes with its submodule" '[ "$(field "$subsnap" "$name" SNAPSHOT)" != "$(field "$out" "$name" SNAPSHOT)" ]'
 done
@@ -249,6 +250,16 @@ recheck=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj
 assert "recheck prints exactly the two named rows" '[ "$(grep -c "/wt-" <<<"$recheck")" = 2 ]'
 check "$recheck" merged BUCKET=safe
 check "$recheck" parent BUCKET=hold-cascade
+
+echo "# no setting that narrows git status hides work: untracked files hidden in the repo and in a submodule, a submodule's ignore for its own submodule"
+git -C "$S/repo" config status.showUntrackedFiles no
+git -C "$S/wt-subnew/outer" config status.showUntrackedFiles no
+git -C "$S/wt-subdirty/outer" config submodule.inner.ignore all
+narrowed=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-new" "$S/wt-renamed" "$S/wt-subnew" "$S/wt-subdirty" 2>&1)
+for kv in new=untracked:1 renamed=untracked:2 subnew=untracked:1 subdirty=wip:1; do
+	check "$narrowed" "${kv%%=*}" "DIRTY=${kv#*=}" "SNAPSHOT=$hex" BUCKET=hold-wip
+done
 
 echo
 echo "$out"
