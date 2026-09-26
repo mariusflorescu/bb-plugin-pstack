@@ -30,7 +30,7 @@ bb plugin config pstack set models "$(cat pstack-models.txt)"
 
 `set` replaces the whole value, and a role the value leaves out keeps its default line. To restore the defaults, run `bb plugin config pstack unset models`.
 
-You might be wondering whether a role can follow whatever model the current thread runs. It can't. Every role names a provider, model, and effort, and pstack passes all three when it spawns that role's child thread. For a panel role the value is a list, and one child thread runs per entry, so the list length sets the panel size. Setup also configures `swarm workers`, the default model for every `/swarm` worker unless a race names a model for each arm.
+You might be wondering whether a role can follow whatever model the current thread runs. Set it to `inherit-parent`. It isn't a model slug. When a thread starts, pstack writes that thread's own provider and model in its place, so the role's child thread runs on the same model as its parent. pstack passes the provider, model, and effort an entry names when it spawns that role's child thread. An entry without `@effort`, `inherit-parent` included, spawns without `--reasoning-level`, and bb resolves the effort the way it does for any `bb thread spawn` flag left out. `bb guide threads` covers the order. The reasoning budget in `/setup-pstack` leaves `inherit-parent` entries alone. For a panel role the value is a list, and one child thread runs per entry, `inherit-parent` entries included, so the list length sets the panel size. Setup also configures `swarm workers`, the default model for every `/swarm` worker unless a race names a model for each arm.
 
 ## Accept the verification offer, or don't
 
