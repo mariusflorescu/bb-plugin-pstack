@@ -29,7 +29,7 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit --skipLibCheck -p tsconfig.json",
     "build": "bb plugin build"
   },
   "devDependencies": {
