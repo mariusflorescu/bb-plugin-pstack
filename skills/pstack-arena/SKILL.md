@@ -42,7 +42,7 @@ for id in <candidate ids>; do
 done
 ```
 
-A worktree candidate's files live at `.environment.path` in `bb thread show <id> --json`, on the branch `.environment.branchName`. A candidate that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the seat's model or effort, at spawn or when the candidate started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that seat again on it with the same brief and environment flags, and say so. If a candidate fails to produce output for any other reason, proceed with N-1 and note the dropout in the synthesis record.
+A worktree candidate's files live at `.environment.path` in `bb thread show <id> --json`, on the branch `.environment.branchName`. A candidate that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the seat's model or effort, at spawn or when the candidate started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that seat again on it with the same brief and environment flags, and say so. If a candidate fails for any other reason, run the provider-retry check in the pstack delegation rules first. Before counting it out, cancel any pending retry and stop the candidate, so it cannot resume and commit on its worktree branch after the synthesis. Then proceed with N-1 and note the dropout in the synthesis record.
 
 ## Phase C: Cross-judge
 
