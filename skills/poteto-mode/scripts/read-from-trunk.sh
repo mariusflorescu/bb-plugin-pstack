@@ -12,22 +12,30 @@ file="${1:?usage: read-from-trunk.sh <path in the pstack repo>}"
 die() { echo "read-from-trunk: $*" >&2; exit 1; }
 
 source_json=$(bb plugin source pstack --json) || die "bb plugin source pstack failed"
-resolved=$(jq -r '.resolved // empty' <<<"$source_json")
-sub=$(jq -r '.subdirectory // empty' <<<"$source_json")
+# `requested` is the install source; `resolved` is display text (`<url>@<ref> (<commit>)` for git).
+requested=$(jq -r '.requested // empty' <<<"$source_json")
 
-case "$resolved" in
-path:*)
-	dir="${resolved#path:}"
+# The source forms of BB's parsePluginSource: builtin:, npm:, git:<url>[@<spec>],
+# http(s)://<url>[@<spec>], and path:<dir> or a bare path.
+case "$requested" in
+"" | builtin:* | npm:*) die "source '$requested' has no git trunk" ;;
+git:* | http://* | https://*)
+	spec="${requested#git:}"
+	# BB splits the ref at the last @, so a ref may hold / (feature/x, ref:release/v2).
+	url="${spec%@*}"
+	[ -n "$url" ] || url="$spec"
+	case "$url" in http://* | https://* | /*) ;; [A-Za-z0-9]*) url="https://$url" ;; *) die "source '$requested' has no git url" ;; esac
+	sub=$(jq -r '.subdirectory // empty' <<<"$source_json")
+	;;
+*)
+	# A path install stores the plugin's own directory, which may sit below the repository root.
+	dir="${requested#path:}"
 	url=$(git -C "$dir" remote get-url origin 2>/dev/null) || die "path source $dir has no origin remote, so it has no trunk"
-	# git resolves a relative local origin from the checkout, and the fetch below runs in the cache.
-	case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$dir/$url" ;; esac ;; esac
+	top=$(git -C "$dir" rev-parse --show-toplevel)
+	sub=$(git -C "$dir" rev-parse --show-prefix)
+	# git resolves a relative local origin from the repository root, and the fetch below runs in the cache.
+	case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$top/$url" ;; esac ;; esac
 	;;
-git:*)
-	url="${resolved#git:}"
-	case "${url##*/}" in *@*) url="${url%@*}" ;; esac
-	case "$url" in *://* | /* | *@*:*) ;; *) url="https://$url" ;; esac
-	;;
-*) die "source '$resolved' has no git trunk" ;;
 esac
 
 cache="${BB_THREAD_STORAGE:-${TMPDIR:-/tmp}}/pstack-trunk.git"
