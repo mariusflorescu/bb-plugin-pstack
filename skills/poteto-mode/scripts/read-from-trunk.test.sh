@@ -25,6 +25,8 @@ git add . && git commit -qm v1
 git remote add origin "$S/origin.git" && git push -q origin main
 git checkout -qb feature && echo "local edit" > "$playbook" && git commit -qam local
 cd "$S"
+git clone -q origin.git relative
+git -C relative remote set-url origin ../origin.git
 git init -q -b main lonely
 
 cat > "$S/stub/bb" <<'EOF'
@@ -56,6 +58,7 @@ if grep -q "@$trunk\$" "$S/err"; then echo "ok   revision on stderr"; else echo 
 
 (cd "$S/plugin" && git checkout -q main && echo "trunk v2" > "$playbook" && git commit -qam v2 && git push -q origin main)
 expect "follows trunk when it moves" "{\"resolved\":\"path:$S/plugin\"}" "trunk v2"
+expect "path source with a relative origin" "{\"resolved\":\"path:$S/relative\"}" "trunk v2"
 expect "git source with a ref" "{\"resolved\":\"git:file://$S/origin.git@main\"}" "trunk v2"
 expect "git source as a bare path" "{\"resolved\":\"git:$S/origin.git\"}" "trunk v2"
 expect "git source with a subdirectory" "{\"resolved\":\"git:$S/origin.git\",\"subdirectory\":\"sub\"}" "sub v1"

@@ -19,6 +19,8 @@ case "$resolved" in
 path:*)
 	dir="${resolved#path:}"
 	url=$(git -C "$dir" remote get-url origin 2>/dev/null) || die "path source $dir has no origin remote, so it has no trunk"
+	# git resolves a relative local origin from the checkout, and the fetch below runs in the cache.
+	case "$url" in /*) ;; *) case "${url%%:*}" in "$url" | */*) url="$dir/$url" ;; esac ;; esac
 	;;
 git:*)
 	url="${resolved#git:}"
