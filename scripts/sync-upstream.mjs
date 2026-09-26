@@ -9,7 +9,7 @@
 // read and merged before anything is written, so an error leaves the tree and
 // the pin untouched.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, lstatSync, readlinkSync, symlinkSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, mkdirSync, rmSync, lstatSync, readlinkSync, symlinkSync, chmodSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -79,17 +79,37 @@ function upstreamSide(mode, sha, upstreamPath, aliased) {
   return { mode, content: aliased ? Buffer.from(alias(blob.toString("utf8"))) : blob };
 }
 
-function localSide(abs) {
-  let stat;
-  try {
-    stat = lstatSync(abs);
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
+// This checkout's side at `ours`, walked one path component at a time so no
+// symlink is followed. A directory at `ours`, or a file or symlink where one of
+// its parent directories belongs, is no side at all; `inTheWay` lists the files
+// that must be deleted before a file can be written there.
+function localSide(ours) {
+  const parts = ours.split("/");
+  for (let depth = 1; depth <= parts.length; depth++) {
+    const path = parts.slice(0, depth).join("/");
+    const abs = join(ROOT, path);
+    let stat;
+    try {
+      stat = lstatSync(abs);
+    } catch (error) {
+      if (error.code === "ENOENT") return { side: null };
+      throw error;
+    }
+    const last = depth === parts.length;
+    if (stat.isDirectory()) {
+      if (last) return { side: null, inTheWay: filesUnder(path) };
+      continue;
+    }
+    if (!last) return { side: null, inTheWay: [path] };
+    if (stat.isSymbolicLink()) return { side: { mode: SYMLINK, content: Buffer.from(readlinkSync(abs)) } };
+    return { side: { mode: stat.mode & 0o111 ? EXECUTABLE : REGULAR, content: readFileSync(abs) } };
   }
-  if (stat.isSymbolicLink()) return { mode: SYMLINK, content: Buffer.from(readlinkSync(abs)) };
-  return { mode: stat.mode & 0o111 ? EXECUTABLE : REGULAR, content: readFileSync(abs) };
 }
+
+const filesUnder = (dir) =>
+  readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? filesUnder(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]
+  );
 
 // Changed paths under the upstream prefix with both sides' modes and blobs,
 // from git's own metadata: a side is absent only when git says so.
@@ -148,8 +168,10 @@ function mergeFile(ours, base, mine, theirs, scratch) {
   return merged.status === 0 ? { outcome: "merged", result } : conflict("edited on both sides, conflict markers in the file", result);
 }
 
+// A directory still at `abs` holds no files by now: planning turned any write
+// into a conflict while a file in its way was kept.
 function write(abs, side) {
-  rmSync(abs, { force: true });
+  rmSync(abs, { recursive: true, force: true });
   if (side === null) return;
   mkdirSync(dirname(abs), { recursive: true });
   if (side.mode === SYMLINK) {
@@ -187,13 +209,24 @@ function main() {
       const aliased = isText(ours) && !VERBATIM.has(ours);
       const base = upstreamSide(change.baseMode, change.baseSha, change.path, aliased);
       const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, aliased);
-      plan.push({ ours, ...mergeFile(ours, base, localSide(join(ROOT, ours)), theirs, scratch) });
+      const { side, inTheWay } = localSide(ours);
+      plan.push({ ours, inTheWay, ...mergeFile(ours, base, side, theirs, scratch) });
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
 
-  for (const { ours, result } of plan) if (result !== undefined) write(join(ROOT, ours), result);
+  // Upstream can turn a file into a directory or back. The new path is free
+  // only if this sync deletes everything in its way; a kept file blocks it.
+  const deleted = new Set(plan.filter((file) => file.result === null).map((file) => file.ours));
+  for (const file of plan) {
+    const kept = file.result && file.inTheWay?.find((path) => !deleted.has(path));
+    if (kept) Object.assign(file, conflict(`${kept} is kept here and is in the way`));
+  }
+
+  // Deletions first, so a path that changed type is free before it is written.
+  for (const { ours, result } of plan) if (result === null) write(join(ROOT, ours), null);
+  for (const { ours, result } of plan) if (result) write(join(ROOT, ours), result);
   writeFileSync(PIN_FILE, `repo=${pin.repo}\npath=${pin.path}\nsha=${to}\n`);
 
   const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} (${file.reason})`);

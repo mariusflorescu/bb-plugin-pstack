@@ -29,7 +29,7 @@ function commit(root, files, prefix = "") {
   for (const [path, value] of Object.entries(files)) {
     const spec = typeof value === "string" ? { text: value } : value;
     const abs = join(root, prefix + path);
-    rmSync(abs, { force: true });
+    rmSync(abs, { recursive: true, force: true });
     if (spec === null) continue;
     if (spec.gitlink) {
       gitlinks.push(prefix + path);
@@ -136,6 +136,60 @@ test("this repo's UPSTREAM-README.md is the pinned upstream README, byte for byt
   const upstream = spawnSync("git", ["cat-file", "blob", blob], { cwd: REPO, encoding: "utf8" });
   if (upstream.status !== 0) return t.skip(`${blob} is not fetched here; node scripts/sync-upstream.mjs fetches upstream`);
   assert.equal(readFileSync(join(REPO, "UPSTREAM-README.md"), "utf8"), upstream.stdout);
+});
+
+const pinned = (at) => readFileSync(at("UPSTREAM"), "utf8").match(/^sha=(.*)$/m)[1];
+
+test("upstream turning a file into a directory deletes the file, then adds the directory", () => {
+  const { run, to, at } = sync({
+    base: { "skills/x/references/topic.md": "flat\n" },
+    upstream: { "skills/x/references/topic.md": null, "skills/x/references/topic.md/index.md": "nested\n" },
+    ours: { "skills/x/references/topic.md": "flat\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^deleted +skills\/x\/references\/topic\.md$/m);
+  assert.match(run.stdout, /^added +skills\/x\/references\/topic\.md\/index\.md$/m);
+  assert.equal(readFileSync(at("skills/x/references/topic.md/index.md"), "utf8"), "nested\n");
+  assert.equal(pinned(at), to);
+});
+
+test("upstream turning a directory into a file deletes the directory, then adds the file", () => {
+  const { run, to, at } = sync({
+    base: { "skills/x/references/topic.md/index.md": "nested\n" },
+    upstream: { "skills/x/references/topic.md/index.md": null, "skills/x/references/topic.md": "flat\n" },
+    ours: { "skills/x/references/topic.md/index.md": "nested\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^deleted +skills\/x\/references\/topic\.md\/index\.md$/m);
+  assert.match(run.stdout, /^added +skills\/x\/references\/topic\.md$/m);
+  assert.equal(readFileSync(at("skills/x/references/topic.md"), "utf8"), "flat\n");
+  assert.equal(pinned(at), to);
+});
+
+test("a file edited here that upstream turned into a directory stays, and the directory conflicts", () => {
+  const { run, to, at } = sync({
+    base: { "skills/x/references/topic.md": "flat\n" },
+    upstream: { "skills/x/references/topic.md": null, "skills/x/references/topic.md/index.md": "nested\n" },
+    ours: { "skills/x/references/topic.md": "flat, adapted for BB\n" },
+  });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stdout, /^conflict +skills\/x\/references\/topic\.md \(changed here, deleted upstream\)$/m);
+  assert.match(run.stdout, /^conflict +skills\/x\/references\/topic\.md\/index\.md \(skills\/x\/references\/topic\.md is kept here and is in the way\)$/m);
+  assert.equal(readFileSync(at("skills/x/references/topic.md"), "utf8"), "flat, adapted for BB\n");
+  assert.equal(pinned(at), to);
+});
+
+test("a directory holding a file edited here that upstream turned into a file stays, and the file conflicts", () => {
+  const { run, to, at } = sync({
+    base: { "skills/x/references/topic.md/index.md": "nested\n" },
+    upstream: { "skills/x/references/topic.md/index.md": null, "skills/x/references/topic.md": "flat\n" },
+    ours: { "skills/x/references/topic.md/index.md": "nested, adapted for BB\n" },
+  });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stdout, /^conflict +skills\/x\/references\/topic\.md\/index\.md \(changed here, deleted upstream\)$/m);
+  assert.match(run.stdout, /^conflict +skills\/x\/references\/topic\.md \(skills\/x\/references\/topic\.md\/index\.md is kept here and is in the way\)$/m);
+  assert.equal(readFileSync(at("skills/x/references/topic.md/index.md"), "utf8"), "nested, adapted for BB\n");
+  assert.equal(pinned(at), to);
 });
 
 test("an entry it cannot apply aborts before any write and keeps the pin", () => {

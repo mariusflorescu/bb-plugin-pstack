@@ -1,6 +1,6 @@
 # Reconcile review findings: pstack on BB
 
-A reviewer from another model family compared your scope with Cursor's pstack and with BB's real CLI. Its report is appended below. Act on it with independent judgment.
+A reviewer, from another model family unless its scope section says it shares yours, compared your scope with Cursor's pstack and with BB's real CLI. Its report is appended below. Act on it with independent judgment.
 
 ## Sources
 
