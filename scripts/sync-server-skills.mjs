@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync, writeFileSync, statSync, existsSync, mkdirSync, rmSync, rmdirSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { frontmatterBlock, description, isUserOnly, paths as pathsOf } from "./frontmatter.mjs";
+import { frontmatter, description, isUserOnly, paths as pathsOf } from "./frontmatter.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS = join(ROOT, "skills");
@@ -29,7 +29,15 @@ function summary(fm) {
 
 const dirs = readdirSync(SKILLS).filter((d) => !d.startsWith(".") && statSync(join(SKILLS, d)).isDirectory()).sort();
 const names = dirs.filter((d) => existsSync(join(SKILLS, d, "SKILL.md")));
-const fms = new Map(names.map((n) => [n, frontmatterBlock(readFileSync(join(SKILLS, n, "SKILL.md"), "utf8"))]));
+function readFrontmatter(name) {
+  try {
+    return frontmatter(readFileSync(join(SKILLS, name, "SKILL.md"), "utf8"));
+  } catch (error) {
+    console.error(`skills/${name}/SKILL.md: invalid frontmatter: ${error.message.split("\n")[0]}`);
+    process.exit(2);
+  }
+}
+const fms = new Map(names.map((n) => [n, readFrontmatter(n)]));
 
 const list = names.map((n) => `  ${JSON.stringify(n)},`).join("\n");
 const summaries = names.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(summary(fms.get(n)))},`).join("\n");

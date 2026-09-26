@@ -21,7 +21,7 @@ Requires bb 0.43 or newer.
 
 The plugin injects the pstack delegation rules into every thread. They say that an explorer, reviewer, runner, worker or judge is a bb child thread (`bb thread spawn --parent-self`) with the provider, model and effort of its role, and that the provider's built-in subagent tool (Claude Code's Agent or Explore, Codex subagents) is never used for a pstack role. A panel role spawns one child per entry, so `/interrogate` can put Claude and GPT reviewers on the same diff. Children report back to the parent thread.
 
-[BB-NATIVE.md](./BB-NATIVE.md) is the contract that maps every Cursor mechanism upstream uses to its bb equivalent. `node scripts/check-bb-native.mjs` enforces it.
+[BB-NATIVE.md](./BB-NATIVE.md) is the contract that maps every Cursor mechanism upstream uses to its bb equivalent. `node scripts/check-bb-native.mjs` enforces it (after `npm ci --ignore-scripts`).
 
 Three skills carry a `pstack-` prefix to avoid clashing with common personal skills: `/pstack-arena`, `/pstack-tdd` and `/pstack-blast-radius`.
 

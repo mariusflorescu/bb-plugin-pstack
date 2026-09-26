@@ -2,7 +2,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ function check(files) {
     if (text === null) copyFileSync(join(SCRIPTS, path.slice("scripts/".length)), join(root, path));
     else writeFileSync(join(root, path), text);
   }
+  symlinkSync(join(SCRIPTS, "..", "node_modules"), join(root, "node_modules"));
   return spawnSync("node", ["scripts/check-bb-native.mjs"], { cwd: root, encoding: "utf8" });
 }
 
@@ -143,26 +144,26 @@ test("in a shell script only a bb thread list call needs --include-hidden, not a
 test("Codex's policy file must match disable-model-invocation, and paths cannot be user-only", () => {
   const policy = "policy:\n  allow_implicit_invocation: false\n";
   const run = check({
-    "server.ts": 'const SKILL_NAMES = [\n  "hidden",\n  "leaky",\n  "orphan",\n  "pathy",\n  "stuck",\n] as const;\n',
+    "server.ts": 'const SKILL_NAMES = [\n  "broken",\n  "hidden",\n  "leaky",\n  "orphan",\n  "pathy",\n  "stuck",\n] as const;\n',
+    "skills/broken/SKILL.md": "---\nname: broken\ndescription: a: b: c\n---\n",
     "skills/hidden/SKILL.md": "---\nname: hidden\ndescription: x\ndisable-model-invocation: true\n---\n",
     "skills/hidden/agents/openai.yaml": policy,
     "skills/leaky/SKILL.md": "---\nname: leaky\ndescription: x\ndisable-model-invocation: true # explicit only\n---\n",
     "skills/orphan/SKILL.md": "---\nname: orphan\ndescription: x\n---\n",
     "skills/orphan/agents/openai.yaml": policy,
     "skills/pathy/SKILL.md": '---\nname: pathy\ndescription: x\npaths: ["**/*.ts"]\n---\n',
-    "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths:\n  - "**/*.ts"\ndisable-model-invocation: true\n---\n',
+    "skills/stuck/SKILL.md": '---\nname: stuck\ndescription: x\npaths:\n- "**/*.ts"\ndisable-model-invocation: true\n---\n',
     "skills/stuck/agents/openai.yaml": policy,
   });
   assert.equal(run.status, 1, run.stderr);
-  assert.equal(
-    run.stdout,
-    [
-      "leaky/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
-      "orphan/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
-      "stuck/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)",
-      "",
-      "2/5 skills clean, 3 findings",
-      "",
-    ].join("\n")
-  );
+  const [broken, ...rest] = run.stdout.split("\n");
+  assert.match(broken, /^broken \[yaml\] invalid SKILL\.md frontmatter or agents\/openai\.yaml: /);
+  assert.deepEqual(rest, [
+    "leaky/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+    "orphan/agents/openai.yaml [codex-policy] must set allow_implicit_invocation: false exactly when SKILL.md sets disable-model-invocation: true; run node scripts/sync-server-skills.mjs",
+    "stuck/SKILL.md [paths-user-only] Claude Code never path-loads a skill with disable-model-invocation; drop disable-model-invocation (BB-NATIVE.md)",
+    "",
+    "2/6 skills clean, 4 findings",
+    "",
+  ]);
 });

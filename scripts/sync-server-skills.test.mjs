@@ -2,7 +2,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,7 @@ function tree(files) {
   mkdirSync(join(root, "scripts"));
   copyFileSync(SCRIPT, join(root, "scripts/sync-server-skills.mjs"));
   copyFileSync(FRONTMATTER, join(root, "scripts/frontmatter.mjs"));
+  symlinkSync(join(REPO, "node_modules"), join(root, "node_modules"));
   return root;
 }
 
@@ -84,8 +85,8 @@ test("SKILL_PATHS takes every list form and keeps brace globs whole", () => {
   const { run, server } = sync({
     "server.ts": SERVER,
     "skills/flow/SKILL.md": '---\nname: flow\ndescription: x\npaths: ["**/*.{ts,tsx}", "**/*.md"]\n---\n',
-    "skills/lines/SKILL.md": '---\nname: lines\ndescription: x\npaths: [\n  "**/*.py",\n  "**/*.pyi",\n]\n---\n',
-    "skills/block/SKILL.md": "---\nname: block\ndescription: x\npaths:\n  - \"**/migrations/**\"\n  - '*.sql'\n---\n",
+    "skills/lines/SKILL.md": '---\nname: lines\ndescription: x\npaths: [ # python\n  "**/*.py", # sources\n  "**/*.pyi"\n]\n---\n',
+    "skills/block/SKILL.md": "---\nname: block\ndescription: x\npaths:\n- \"**/migrations/**\"\n- '*.sql'\n---\n",
     "skills/comma/SKILL.md": "---\nname: comma\ndescription: x\npaths: src/**/*.rs, *.toml\n---\n",
     "skills/none/SKILL.md": "---\nname: none\ndescription: x\n---\n",
   });
@@ -159,6 +160,17 @@ test("a server.ts without one of the generated blocks is an error, not a silent 
   const result = run(root);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /server\.ts has no block matching .*SKILL_PATHS/);
+});
+
+test("invalid frontmatter is an error naming the file", () => {
+  const root = tree({
+    "server.ts": SERVER,
+    "skills/broken/SKILL.md": "---\nname: broken\ndescription: a: b: c\n---\n",
+  });
+  const result = run(root);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /^skills\/broken\/SKILL\.md: invalid frontmatter: /);
+  assert.equal(readFileSync(join(root, "server.ts"), "utf8"), SERVER);
 });
 
 test("this repository is up to date", () => {
