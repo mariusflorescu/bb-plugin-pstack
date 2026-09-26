@@ -190,14 +190,16 @@ const PATH_POINTER = "Before you read or edit a file, load each pstack skill who
 function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   const prefix = SKILL_PREFIX[providerId] ?? "/";
-  const userOnly = `Most are user-invoked only, so they are not in your skill list${prefix === "/" ? "" : `. Users run them here as ${prefix}<name>`}`;
+  const userOnly = `Most are user-invoked only, so they are not in your skill list${
+    prefix === "/" ? "" : `. Here they run as ${prefix}<name>: answer a /<name> you cannot find by asking for ${prefix}<name>`
+  }`;
   return `## pstack delegation rules
 
 You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Take provider, model and effort from the role's line below; an entry without @effort omits --reasoning-level. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment. Commit what it needs before spawning it, because uncommitted changes do not reach a worktree. A worktree child on another machine (--machine) cannot see your local commits: push first and pass --base-branch origin/<your branch>. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
+Take provider, model and effort from the role's line below; an entry without @effort omits --reasoning-level. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment. Commit what it needs first: uncommitted changes do not reach a worktree. A worktree child on another machine (--machine) cannot see your local commits: push first and pass --base-branch origin/<your branch>. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
 
 for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
 
@@ -205,7 +207,7 @@ A child that fails is in status error, and bb thread wait exits at once with an 
 
 Children also report back to this thread. Follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
 
-pstack skills name each other in bold (for example **unslop**, **principle-prove-it-works**). ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
+pstack skills name each other in bold, like **unslop**. ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
 
 ${pathSection}${roleSection}`;
 }

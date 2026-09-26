@@ -19,6 +19,7 @@ Compare our file with Cursor's file line by line.
 4. **Safety.** Unauthenticated endpoints, reads of other projects' or users' threads, external writes the user did not ask for, deletion without a gate. Cursor's own autonomy rule in poteto-mode ("external actions proceed without asking") is kept by the owner's decision: do not report it.
 5. **Consistency.** Role names match `DEFAULT_MODELS` in `server.ts`. Links and bold skill names resolve. The same mechanism is described the same way across skills.
 6. **Leftovers.** Cursor concepts the regex checker (`node scripts/check-bb-native.mjs`) cannot see.
+7. **Both providers.** Every skill must work the same in a Claude Code thread and in a Codex thread (`BB-NATIVE.md`, the `disable-model-invocation`, `paths` and `poteto-agent` rows). A skill a brief or the user runs by name uses the provider's syntax (`/<name>` on Claude Code, `$<name>` on Codex); a frontmatter flag one provider ignores has its stand-in (`agents/openai.yaml`, the `paths` line `server.ts` injects); no instruction leans on a tool or behavior only one provider has without saying what the other does.
 
 ## Convergence
 

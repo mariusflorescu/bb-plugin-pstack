@@ -74,6 +74,20 @@ function skillNameFindings(line) {
   return findings;
 }
 
+// A brief that makes a child run a skill must use the child's provider syntax:
+// Claude Code runs `/<name>`, Codex `$<name>` (BB-NATIVE.md). A line that
+// starts a brief with `/<skill>` must also give the `$<skill>` form.
+const BRIEF_START =
+  /\b(start|begin)(s|ning|ing)?\s+(its|the|each|a|every|that)?\s*brief\b|\bbriefs?\s+(start|begin)(s|ning|ing)?\b|\bbriefs?\b[^.]{0,40}\bfirst line\b/i;
+
+function briefPrefixFindings(line) {
+  if (!BRIEF_START.test(line)) return [];
+  return [...line.matchAll(/`\/([a-z][a-z0-9-]*)`/g)]
+    .map((m) => m[1])
+    .filter((name) => existsSync(join(SKILLS, name, "SKILL.md")) && !line.includes(`$${name}`))
+    .map((name) => `[brief-prefix] a brief runs /${name} only on Claude Code; also give $${name} for a Codex child`);
+}
+
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {
     if (entry === "node_modules" || entry === "bun.lock") return [];
@@ -143,7 +157,7 @@ function checkSkill(name) {
         const re = (isShell && rule.shell) || rule.re;
         if (re.test(line) && !rule.unless?.test(line)) findings.push(`${rel}:${i + 1} [${rule.id}] ${rule.hint}: ${line.trim().slice(0, 140)}`);
       }
-      if (isMarkdown) for (const finding of skillNameFindings(line)) findings.push(`${rel}:${i + 1} ${finding}`);
+      if (isMarkdown) for (const finding of [...skillNameFindings(line), ...briefPrefixFindings(line)]) findings.push(`${rel}:${i + 1} ${finding}`);
     });
     if (!isMarkdown) continue;
     for (const target of relativeTargets(lines.join("\n"))) {

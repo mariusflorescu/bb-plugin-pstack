@@ -61,7 +61,11 @@ test("every provider is told to load a paths skill for matching files", async ()
 test("user-only skills are out of every skill list, and Codex is told its users run them with $", async () => {
   const codex = await instructions("", { provider: "codex" });
   const claude = await instructions("", { provider: "claude-code" });
-  assert.ok(codex.includes("Most are user-invoked only, so they are not in your skill list. Users run them here as $<name>. Read a named skill"));
+  assert.ok(
+    codex.includes(
+      "Most are user-invoked only, so they are not in your skill list. Here they run as $<name>: answer a /<name> you cannot find by asking for $<name>. Read a named skill"
+    )
+  );
   assert.ok(claude.includes("Most are user-invoked only, so they are not in your skill list. Read a named skill"));
   assert.equal(claude.includes("$<name>"), false);
 });

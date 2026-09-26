@@ -169,3 +169,26 @@ test("Codex's policy file must match disable-model-invocation, paths cannot be u
     "",
   ]);
 });
+
+test("a brief that runs a skill gives both the Claude Code and the Codex syntax", () => {
+  const run = check({
+    "server.ts": 'const SKILL_NAMES = [\n  "a",\n  "b",\n] as const;\n',
+    "skills/b/SKILL.md": "---\nname: b\ndescription: x\n---\n",
+    "skills/a/SKILL.md": [
+      "---",
+      "name: a",
+      "description: x",
+      "---",
+      "Start its brief with `/b` on its own line.",
+      "Start its brief with `/b` for a Claude Code child and `$b` for a Codex child.",
+      "The worker runs `/b`, and its brief says where to write.",
+      "Each brief starting with `/unknown-skill` is not ours.",
+      "",
+    ].join("\n"),
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(
+    run.stdout,
+    ["a/SKILL.md:5 [brief-prefix] a brief runs /b only on Claude Code; also give $b for a Codex child", "", "1/2 skills clean, 1 findings", ""].join("\n")
+  );
+});
