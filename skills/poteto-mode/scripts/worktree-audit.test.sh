@@ -23,7 +23,7 @@ wt() { git worktree add -q -b "$1" "$S/wt-$1" && (cd "$S/wt-$1" && echo "$1" > "
 wt_at_main() { git worktree add -q -b "$1" "$S/wt-$1"; }
 wt merged && git merge -q --ff-only merged && git push -q origin main
 for name in wip inuse running child recent; do wt "$name"; done
-for name in hidden parent leaf new renamed byname byslash bytilde kid; do wt_at_main "$name"; done
+for name in hidden parent leaf new renamed staged byname byslash bytilde kid; do wt_at_main "$name"; done
 git worktree add -q -b spaced "$S/wt-sp ace"
 ln -s "$S" "$S.link"
 git worktree add -q --detach "$S/wt-detached" && (cd "$S/wt-detached" && echo d > d.txt && git add . && git commit -qm detached)
@@ -32,6 +32,7 @@ echo edited >> "$S/wt-leaf/a.txt"
 echo 'export const x = 1' > "$S/wt-new/new.ts"
 mkdir "$S/wt-renamed/notes" && echo draft > "$S/wt-renamed/notes/a.md"
 echo scratch > "$S/wt-inuse/scratch.md"
+(cd "$S/wt-staged" && echo staged1 > a.txt && git add a.txt && echo final > a.txt)
 echo scratch > "$S/wt-running/scratch.md"
 
 now=$(( $(date +%s) * 1000 )); old=$(( now - 10 * 86400 * 1000 ))
@@ -146,7 +147,7 @@ assert "never reads another project's log" '! grep -qx thr_q "$S/stub/logs-read"
 assert "never reads its own log" '! grep -qx thr_self "$S/stub/logs-read" 2>/dev/null'
 
 echo "# the auditing thread holds the worktree it works in, not its children's"
-check "$out" kid "LAST_THREAD=????-??-??" BUCKET=safe
+check "$out" kid "LAST_THREAD=????-??-??T??:??:??.???Z" BUCKET=safe
 check "$(run BB_THREAD_ID=thr_a)" merged "LAST_THREAD=*,running" BUCKET=hold-in-use
 
 echo "# unknown BB state holds every row: bb down, one log unreadable, no BB environment"
@@ -159,22 +160,31 @@ for o in "$down" "$nolog" "$nohost"; do
 	assert "no row is safe" '! field "$o" "*" BUCKET | grep -qx safe'
 done
 
-echo "# an approval binds to the snapshot: HEAD, the tracked diff, and each untracked path and content"
+echo "# an approval binds to the snapshot: HEAD, the index, the tracked diff, and each untracked path and content"
 check "$out" merged SNAPSHOT=-
-for name in wip new renamed detached leaf; do
+for name in wip new renamed detached leaf staged; do
 	check "$out" "$name" "SNAPSHOT=[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
 done
 echo other >> "$S/wt-wip/a.txt"
 echo 'rm -rf ~' > "$S/wt-new/new.ts"
 mv "$S/wt-renamed/notes/a.md" "$S/wt-renamed/notes/b.md"
 (cd "$S/wt-detached" && git commit -q --amend -m amended)
+# Restaging changes only the index: HEAD and the working tree read the same.
+(cd "$S/wt-staged" && echo staged2 > a.txt && git add a.txt && echo final > a.txt)
 snap=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
-	bash "$audit" "$S/repo" "$S/wt-wip" "$S/wt-new" "$S/wt-renamed" "$S/wt-detached" "$S/wt-leaf" 2>&1)
-for kv in wip=wip:1 new=untracked:1 renamed=untracked:1 detached=unreachable leaf=wip:1; do check "$snap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
-for name in wip new renamed detached; do
+	bash "$audit" "$S/repo" "$S/wt-wip" "$S/wt-new" "$S/wt-renamed" "$S/wt-detached" "$S/wt-leaf" "$S/wt-staged" 2>&1)
+for kv in wip=wip:1 new=untracked:1 renamed=untracked:1 detached=unreachable leaf=wip:1 staged=wip:1; do check "$snap" "${kv%%=*}" "DIRTY=${kv#*=}"; done
+for name in wip new renamed detached staged; do
 	assert "$name snapshot changes with its content" '[ "$(field "$snap" "$name" SNAPSHOT)" != "$(field "$out" "$name" SNAPSHOT)" ]'
 done
 assert "leaf snapshot is stable" '[ "$(field "$snap" leaf SNAPSHOT)" = "$(field "$out" leaf SNAPSHOT)" ]'
+
+echo "# an approval binds to LAST_THREAD: activity later the same day, even a millisecond later, changes it"
+jq '(.[] | select(.id == "thr_e") | .updatedAt) += 1' "$S/stub/threads.json" > "$S/stub/threads.new" && mv "$S/stub/threads.new" "$S/stub/threads.json"
+later=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \
+	bash "$audit" "$S/repo" "$S/wt-recent" 2>&1)
+check "$later" recent BUCKET=verify-recent-chat
+assert "recent LAST_THREAD moves with new activity" '[ "$(field "$later" recent LAST_THREAD)" != "$(field "$out" recent LAST_THREAD)" ]'
 
 echo "# a recheck names only the worktrees about to be pruned"
 recheck=$(env PATH="$S/stub:$PATH" BB_ENVIRONMENT_ID=env_main BB_PROJECT_ID=proj_here BB_THREAD_ID=thr_self \

@@ -47,17 +47,20 @@ mentioned_worktrees() {
 	printf '%s\n' "$found" | sed '/^$/d' | sort -u
 }
 
-# The work removing a worktree loses, as one hash: HEAD, the tracked diff
-# against it, and each untracked file's path and content. Counts stay the same
-# when one file is swapped for another, so an approval to lose work binds to
-# this. A path git has to quote fails the hash, and the row holds.
+# The work removing a worktree loses, as one hash: HEAD, every index entry
+# (mode, blob and stage, since `diff HEAD` skips staged content the working
+# tree has moved past), the tracked diff against HEAD, and each untracked
+# file's path and content. Counts stay the same when one file is swapped for
+# another, so an approval to lose work binds to this. A path git has to quote
+# fails the hash, and the row holds.
 snapshot() {
-	local head diff paths blobs=""
+	local head index diff paths blobs=""
 	head=$(git -C "$1" rev-parse HEAD) || return 1
+	index=$(git -C "$1" ls-files --stage) || return 1
 	diff=$(git -C "$1" diff HEAD --binary --no-ext-diff --no-textconv --no-color) || return 1
 	paths=$(git -C "$1" -c core.quotePath=false ls-files --others --exclude-standard) || return 1
 	[ -n "$paths" ] && { blobs=$(git -C "$1" hash-object --stdin-paths <<<"$paths") || return 1; }
-	printf '%s\n%s\n%s\n%s\n' "$head" "$diff" "$paths" "$blobs" | git hash-object --stdin | cut -c1-12
+	printf '%s\n%s\n%s\n%s\n%s\n' "$head" "$index" "$diff" "$paths" "$blobs" | git hash-object --stdin | cut -c1-12
 }
 
 # Main worktree is the first entry; everything else is a candidate.
@@ -125,9 +128,11 @@ fi
 
 if [ "$bb_known" = yes ]; then
 	# One row per worktree path: its environments, the newest activity of the
-	# threads using it, how many of those have a pinned or running thread in
-	# their ancestry, the environments outside this path that archiving its
-	# threads would reach, and the threads whose logs name it. BB's archive
+	# threads using it (BB's millisecond updatedAt, kept whole so a recheck
+	# sees activity later the same day), how many of those have a pinned or
+	# running thread in their ancestry, the environments outside this path
+	# that archiving its threads would reach, and the threads whose logs name
+	# it. BB's archive
 	# walks children, lifecycle dependents and hidden forks, through archived
 	# threads too, so the walk uses both lists. This thread is running only
 	# because it runs the audit, so it holds the worktree it works in but not
@@ -153,7 +158,7 @@ if [ "$bb_known" = yes ]; then
 		| ($roots + [($named[$wt] // [])[] | $by[.] // empty] | unique_by(.id)) as $users
 		| [$wt,
 			(if $envs == [] then "-" else $envs | join(",") end),
-			((($users | map(.updatedAt) | max) // 0) / 1000 | floor),
+			(($users | map(.updatedAt) | max) // 0),
 			($users | map(select(any(lineage; .pinnedAt != null))) | length),
 			($users | map(select(.id == $self or any(lineage; .id != $self and running))) | length),
 			(if $outside == [] then "-" else [$outside[] | .environmentId // .id] | unique | join(",") end),
@@ -206,16 +211,17 @@ while read -r wt; do
 		'.[] | select(.headRefName==$b) | "#\(.number)/\(.state)"' <<<"$prs" 2>/dev/null | head -1)
 	[ -z "$pr" ] && pr="-"
 
-	env="?"; last="?"; cascade="?"; named="?"; last_ts=0; pinned=0; running=0
+	env="?"; last="?"; cascade="?"; named="?"; last_ms=0; pinned=0; running=0
 	if [ "$bb_known" = yes ]; then
-		IFS=$'\t' read -r _ env last_ts pinned running cascade named \
+		IFS=$'\t' read -r _ env last_ms pinned running cascade named \
 			< <(awk -F'\t' -v p="$wt" '$1 == p' <<<"$usage")
 		last="-"
-		[ "${last_ts:-0}" -gt 0 ] && last=$(date -r "$last_ts" '+%Y-%m-%d' 2>/dev/null)
+		[ "${last_ms:-0}" -gt 0 ] && last=$(jq -rn --argjson ms "$last_ms" \
+			'($ms / 1000 | floor | todate | sub("Z$"; "")) + "." + ("00" + ($ms % 1000 | tostring))[-3:] + "Z"')
 		[ "${pinned:-0}" -gt 0 ] && last="$last,pinned"
 		[ "${running:-0}" -gt 0 ] && last="$last,running"
 	fi
-	recent=$([ "${last_ts:-0}" -gt 0 ] && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
+	recent=$([ "${last_ms:-0}" -gt 0 ] && [ $(( (now - last_ms / 1000) / 86400 )) -le 4 ] && echo yes || echo no)
 
 	# First match wins, so every hold outranks every go, and the holds a user
 	# cannot release outrank the ones they can.

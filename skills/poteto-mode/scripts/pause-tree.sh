@@ -1,54 +1,72 @@
 #!/usr/bin/env bash
-# Pauses the work under a BB thread. Pauses every automation in the project that
-# would re-prompt the thread or a descendant, then settles every descendant,
-# hidden ones included. `bb thread stop` does not cascade, `--parent-thread`
-# lists one level, a stopped child's report starts a turn on an idle parent, and
-# a stop leaves queued messages to dispatch later, so each pass walks the whole
-# tree again, discards the queued wake-ups this program created, and stops what
-# still runs, until one pass finds every descendant settled. A queued message is
-# the program's when a thread in this tree sent it or it is the due notice of an
-# automation a thread in this tree created. Each discarded message is appended
-# as one JSON line to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl for the
-# resume note. Any other queued message (the user's, a retry, another program's)
-# stays queued and its thread is never stopped. The thread itself keeps running.
-# Prints what it paused, discarded and stopped; exits 1 when a thread will not
-# settle or holds queued messages this program did not create.
+# Pauses the work under a BB thread. Pauses every automation that would
+# re-prompt the thread or a descendant, then settles every descendant, hidden
+# ones included. `bb thread stop` does not cascade, `--parent-thread` lists one
+# level and crosses projects, a stopped child's report starts a turn on an idle
+# parent, and a stop leaves queued messages to dispatch later, so each pass
+# walks the whole tree again, pauses the automations aimed at it in every
+# project a thread of it lives in, discards the queued wake-ups this program
+# created on the thread and every descendant, and stops what still runs, until
+# one pass finds every descendant settled. A queued message is the program's
+# when a thread in this tree sent it or it is the due notice of an automation a
+# thread in this tree created. Each discarded message is appended as one JSON
+# line to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl for the resume note.
+# Any other queued message (the user's, a retry, a system notice, another
+# program's) stays queued and its thread is never stopped. The thread itself is
+# never stopped, so such a message on it wakes only it: it is named but does
+# not fail the run. Prints what it paused (with the project to resume it in),
+# discarded, stopped and left queued on the thread; exits 1 when a descendant
+# will not settle or holds queued messages this program did not create.
 #
 # Usage: pause-tree.sh <thread-id>
 set -u
 root="${1:?usage: pause-tree.sh <thread-id>}"
-project="${BB_PROJECT_ID:?BB_PROJECT_ID is not set}"
 saved="${BB_THREAD_STORAGE:?BB_THREAD_STORAGE is not set}/pause-tree-$root.jsonl"
 # BB batches child reports for 2s before delivering them to the parent.
 settle="${PAUSE_TREE_SETTLE:-5}"
+root_project=$(bb thread show "$root" --json | jq -er '.thread.projectId') \
+	|| { echo "error: cannot read the project of $root" >&2; exit 1; }
 
-# Every descendant as "id<TAB>status<TAB>queuedWork", parents first.
+# Every descendant as "id<TAB>status<TAB>queuedWork<TAB>projectId", parents first.
 tree() {
 	local kids id
 	kids=$(bb thread list --parent-thread "$1" --include-hidden --json) || return 1
-	jq -r '.[] | [.id, .status, .queuedWork] | @tsv' <<<"$kids" || return 1
+	jq -r '.[] | [.id, .status, .queuedWork, .projectId] | @tsv' <<<"$kids" || return 1
 	for id in $(jq -r '.[].id' <<<"$kids"); do tree "$id" || return 1; done
 }
 
-rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
-autos=$(bb automation list --project "$project" --json) || { echo "error: cannot list automations in $project" >&2; exit 1; }
-targets=$(printf '%s\n%s\n' "$root" "$(cut -f1 <<<"$rows")")
-for id in $(jq -r --arg ids "$targets" '.[] | select(.enabled == true)
-	| select((.targetThreadId // .execution.targetThreadId // "") | IN($ids | split("\n")[] | select(. != ""))) | .id' <<<"$autos"); do
-	bb automation pause "$id" --project "$project" >/dev/null && echo "paused automation $id" \
-		|| { echo "error: cannot pause automation $id" >&2; exit 1; }
-done
+# Pauses every enabled automation aimed at a thread of the tree, in the root's
+# project, the caller's, and each descendant's, since an automation lists only
+# under the project that owns it. Leaves every automation of those projects in
+# $autos for the due-notice rule.
+pause_automations() {
+	local p list id
+	autos="[]"
+	for p in $(printf '%s\n%s\n%s\n' "$root_project" "${BB_PROJECT_ID:-}" "$(cut -f4 <<<"$rows")" | sed '/^$/d' | sort -u); do
+		list=$(bb automation list --project "$p" --json) && autos=$(jq -c --argjson more "$list" '. + $more' <<<"$autos") \
+			|| { echo "error: cannot list automations in $p" >&2; return 1; }
+		for id in $(jq -r --arg ids "$tree_ids" '.[] | select(.enabled == true)
+			| select((.targetThreadId // .execution.targetThreadId // "") | IN($ids | split("\n")[] | select(. != ""))) | .id' <<<"$list"); do
+			bb automation pause "$id" --project "$p" >/dev/null || { echo "error: cannot pause automation $id in $p" >&2; return 1; }
+			echo "paused automation $id in $p"
+			acted=yes
+		done
+	done
+}
 
+rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
 held=""; settled=no
 for pass in 1 2 3 4 5 6 7 8 9 10; do
 	tree_ids=$(printf '%s\n%s\n' "$root" "$(cut -f1 <<<"$rows")")
 	acted=no
-	for id in $(awk -F'\t' '$3 != "none" { print $1 }' <<<"$rows"); do
+	pause_automations || exit 1
+	# The root's queue too: a wake-up queued behind its turn restarts the program.
+	for id in "$root" $(awk -F'\t' '$3 != "none" { print $1 }' <<<"$rows"); do
 		grep -qxF "$id" <<<"$held" && continue
 		queue=$(bb thread queue list "$id" --json) || { echo "error: cannot list the queued messages of $id" >&2; exit 1; }
 		while IFS=$'\t' read -r mid ours; do
 			[ -z "$mid" ] && continue
-			if [ "$ours" = false ]; then held=$(printf '%s\n%s' "$held" "$id"); continue; fi
+			if [ "$ours" = false ]; then [ "$id" = "$root" ] || held=$(printf '%s\n%s' "$held" "$id"); continue; fi
 			row=$(jq -c --arg m "$mid" '.[] | select(.id == $m)' <<<"$queue")
 			bb thread queue delete "$id" "$mid" >/dev/null || { echo "warn: cannot discard $mid on $id" >&2; acted=yes; continue; }
 			printf '%s\n' "$row" >> "$saved"
@@ -70,6 +88,18 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 	rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
 done
 
+# Each message queued on a thread as "  thread status message initiator sender waiting-on".
+queued_rows() {
+	local queue
+	queue=$(bb thread queue list "$1" --json) || { echo "error: cannot list the queued messages of $1" >&2; return 1; }
+	jq -r --arg id "$1" --arg st "$2" \
+		'.[] | "  \($id) \($st) \(.id) \(.initiator) \(.senderThreadId // "-") \(.waitingOn.kind // "turn")"' <<<"$queue"
+}
+
+left=$(queued_rows "$root" "$(bb thread show "$root" --json | jq -r '.thread.status')") || exit 1
+[ -n "$left" ] && printf '%s\n%s\n' \
+	"left queued on $root, which this script never stops, so each wakes only $root (thread, status, message, initiator, sender, waiting on):" "$left"
+
 if [ "$settled" = yes ] && [ -z "$held" ]; then
 	echo "settled $(grep -c . <<<"$rows") descendants of $root after $((pass - 1)) rounds"
 	exit 0
@@ -83,9 +113,7 @@ fi
 [ -n "$held" ] && {
 	echo "error: left queued messages this program did not create, and never stopped their threads (thread, status, message, initiator, sender, waiting on):" >&2
 	for id in $(printf '%s\n' "$held" | sed '/^$/d' | sort -u); do
-		st=$(awk -F'\t' -v id="$id" '$1 == id { print $2 }' <<<"$rows")
-		bb thread queue list "$id" --json | jq -r --arg id "$id" --arg st "$st" \
-			'.[] | "  \($id) \($st) \(.id) \(.initiator) \(.senderThreadId // "-") \(.waitingOn.kind // "turn")"' >&2
+		queued_rows "$id" "$(awk -F'\t' -v id="$id" '$1 == id { print $2 }' <<<"$rows")" >&2
 	done
 }
 exit 1

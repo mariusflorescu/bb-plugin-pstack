@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Rerunnable check for skills/poteto-mode/scripts/pause-tree.sh.
 # A stub `bb` holds a coordinator, sub-coordinator and worker tree with a hidden
-# worker and behaves the way BB does: a stop leaves the queue alone, a message
-# queued behind a turn dispatches when that turn ends, a stopped child's report
-# wakes its idle parent, and a thread list derives queuedWork from the queue.
+# worker and a worker in another project, and behaves the way BB does: a stop
+# leaves the queue alone, a message queued behind a turn dispatches when that
+# turn ends, a stopped child's report wakes its idle parent, a thread list
+# derives queuedWork from the queue, and automations are listed and paused one
+# project at a time.
 # Asserts the end state of every thread, queued message and automation.
 # Usage: pause-tree.test.sh <path to pause-tree.sh>
 set -eu
@@ -46,8 +48,13 @@ case "\$1 \$2" in
 			update "\$state" --arg id "\$id" 'map(if .id == \$id then .status = "active" else . end)'
 		fi
 		exit 0 ;;
-	"automation list") cat "\$autos" ;;
-	"automation pause") update "\$autos" --arg id "\$3" 'map(if .id == \$id then .enabled = false else . end)' ;;
+	"thread show") jq -e --arg id "\$3" '.[] | select(.id == \$id) | {thread: .}' "\$state" ;;
+	"automation list") [ "\$3" = --project ] || exit 2
+		jq --arg p "\$4" '[.[] | select(.projectId == \$p)]' "\$autos" ;;
+	"automation pause") [ "\$4" = --project ] || exit 2
+		jq -e --arg id "\$3" --arg p "\$5" 'any(.[]; .id == \$id and .projectId == \$p)' "\$autos" >/dev/null || { echo "no automation \$3 in \$5" >&2; exit 1; }
+		echo "pause \$3 \$5" >> "\$calls"
+		update "\$autos" --arg id "\$3" 'map(if .id == \$id then .enabled = false else . end)' ;;
 	*) exit 2 ;;
 esac
 EOF
@@ -61,28 +68,35 @@ msg() { # id thread initiator sender origin waiting-on text
 }
 seed() {
 	cat > "$S/threads.json" <<'EOF'
-[{"id":"thr_root","parentThreadId":null,"status":"active","visibility":"visible"},
- {"id":"thr_sub","parentThreadId":"thr_root","status":"active","visibility":"visible"},
- {"id":"thr_w1","parentThreadId":"thr_sub","status":"active","visibility":"visible"},
- {"id":"thr_w2","parentThreadId":"thr_sub","status":"active","visibility":"hidden"},
- {"id":"thr_told","parentThreadId":"thr_root","status":"idle","visibility":"visible"},
- {"id":"thr_woken","parentThreadId":"thr_sub","status":"idle","visibility":"visible"},
- {"id":"thr_behind","parentThreadId":"thr_root","status":"active","visibility":"visible"},
- {"id":"thr_done","parentThreadId":"thr_root","status":"idle","visibility":"visible"},
- {"id":"thr_elsewhere","parentThreadId":null,"status":"active","visibility":"visible"}]
+[{"id":"thr_root","projectId":"proj","parentThreadId":null,"status":"active","visibility":"visible"},
+ {"id":"thr_sub","projectId":"proj","parentThreadId":"thr_root","status":"active","visibility":"visible"},
+ {"id":"thr_w1","projectId":"proj","parentThreadId":"thr_sub","status":"active","visibility":"visible"},
+ {"id":"thr_w2","projectId":"proj","parentThreadId":"thr_sub","status":"active","visibility":"hidden"},
+ {"id":"thr_far","projectId":"proj_other","parentThreadId":"thr_sub","status":"active","visibility":"visible"},
+ {"id":"thr_told","projectId":"proj","parentThreadId":"thr_root","status":"idle","visibility":"visible"},
+ {"id":"thr_woken","projectId":"proj","parentThreadId":"thr_sub","status":"idle","visibility":"visible"},
+ {"id":"thr_behind","projectId":"proj","parentThreadId":"thr_root","status":"active","visibility":"visible"},
+ {"id":"thr_done","projectId":"proj","parentThreadId":"thr_root","status":"idle","visibility":"visible"},
+ {"id":"thr_elsewhere","projectId":"proj","parentThreadId":null,"status":"active","visibility":"visible"},
+ {"id":"thr_stranger","projectId":"proj_other","parentThreadId":null,"status":"idle","visibility":"visible"}]
 EOF
 	{
 		msg msg_tell thr_told agent thr_sub cli time "Phase 2 brief."
 		msg msg_due thr_woken user "" plugin interaction $'[bb automation due:auto_worker]\n\nAudit tick.'
 		msg msg_behind thr_behind agent thr_root cli "" "Next slice."
 		msg msg_else thr_elsewhere user "" app time "Not this tree."
+		msg msg_fardue thr_far user "" plugin thread-busy $'[bb automation due:auto_far]\n\nFar tick.'
+		msg msg_rootdue thr_root user "" plugin interaction $'[bb automation due:auto_tick]\n\nResume the run.'
+		msg msg_roottell thr_root agent thr_sub cli thread-busy "Slice done, start the next."
 	} | jq -s . > "$S/queue.json"
 	cat > "$S/automations.json" <<'EOF'
-[{"id":"auto_tick","enabled":true,"createdByThreadId":"thr_root","execution":{"mode":"agent","targetThreadId":"thr_root"}},
- {"id":"auto_worker","enabled":true,"createdByThreadId":"thr_sub","targetThreadId":"thr_w2"},
- {"id":"auto_user","enabled":true,"createdByThreadId":null,"execution":{"mode":"agent","targetThreadId":"thr_held"}},
- {"id":"auto_spawner","enabled":true,"createdByThreadId":"thr_root","execution":{"mode":"agent"}},
- {"id":"auto_other","enabled":true,"createdByThreadId":"thr_elsewhere","execution":{"mode":"agent","targetThreadId":"thr_elsewhere"}}]
+[{"id":"auto_tick","projectId":"proj","enabled":true,"createdByThreadId":"thr_root","execution":{"mode":"agent","targetThreadId":"thr_root"}},
+ {"id":"auto_worker","projectId":"proj","enabled":true,"createdByThreadId":"thr_sub","targetThreadId":"thr_w2"},
+ {"id":"auto_user","projectId":"proj","enabled":true,"createdByThreadId":null,"execution":{"mode":"agent","targetThreadId":"thr_held"}},
+ {"id":"auto_spawner","projectId":"proj","enabled":true,"createdByThreadId":"thr_root","execution":{"mode":"agent"}},
+ {"id":"auto_other","projectId":"proj","enabled":true,"createdByThreadId":"thr_elsewhere","execution":{"mode":"agent","targetThreadId":"thr_elsewhere"}},
+ {"id":"auto_far","projectId":"proj_other","enabled":true,"createdByThreadId":"thr_far","execution":{"mode":"agent","targetThreadId":"thr_far"}},
+ {"id":"auto_stranger","projectId":"proj_other","enabled":true,"createdByThreadId":null,"execution":{"mode":"agent","targetThreadId":"thr_stranger"}}]
 EOF
 	: > "$S/calls"
 	rm -f "$S/storage"/*
@@ -97,23 +111,50 @@ calls() { grep -c "^$1\$" "$S/calls" || true; }
 fail=0
 expect() { if [ "$2" = "$3" ]; then echo "ok   $1 = $2"; else echo "FAIL $1 got '$2' want '$3'"; fail=1; fi; }
 
-echo "# the program's own queued tells and automation wake-ups are discarded, saved, and never dispatched"
+echo "# the program's own queued tells and automation wake-ups are discarded, saved, and never dispatched, the root's too"
 seed
 out=$(run) && code=0 || code=$?
 expect "exit" "$code" 0
-for id in thr_sub thr_w1 thr_w2 thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
-expect "thr_root keeps running" "$(status thr_root)" active/none
+for id in thr_sub thr_w1 thr_w2 thr_far thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
+expect "thr_root keeps running with an empty queue" "$(status thr_root)" active/none
+expect "thr_root never stopped" "$(calls "stop thr_root")" 0
 expect "thr_elsewhere untouched" "$(status thr_elsewhere)" active/waiting
-expect "saved" "$(jq -rs '[.[].id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "msg_behind msg_due msg_tell"
+expect "saved" "$(jq -rs '[.[].id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" \
+	"msg_behind msg_due msg_fardue msg_rootdue msg_roottell msg_tell"
 expect "saved text" "$(jq -rs '.[] | select(.id == "msg_tell") | .content[0].text' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "Phase 2 brief."
 expect "dispatched" "$(grep -c '^dispatch ' "$S/calls" || true)" 0
 expect "auto_tick" "$(enabled auto_tick)" false
 expect "auto_worker" "$(enabled auto_worker)" false
 expect "auto_spawner untouched" "$(enabled auto_spawner)" true
 expect "auto_other untouched" "$(enabled auto_other)" true
+echo "# a descendant in another project has its automations paused in that project"
+expect "auto_far" "$(enabled auto_far)" false
+expect "auto_far named with its project" "$(grep -c '^paused automation auto_far in proj_other$' <<<"$out" || true)" 1
+expect "auto_stranger untouched" "$(enabled auto_stranger)" true
 expect "idempotent rerun exit" "$(run >/dev/null && echo 0 || echo $?)" 0
 
-echo "# queued work the program did not create is left in place, its thread is not stopped, and the script stops"
+echo "# the root's own project holds its automations, whatever project the caller is in"
+seed
+run BB_PROJECT_ID=proj_caller >/dev/null && code=0 || code=$?
+expect "other-project caller exit" "$code" 0
+expect "auto_tick paused from the root's project" "$(enabled auto_tick)" false
+expect "thr_root queue emptied" "$(queued thr_root)" ""
+
+echo "# a message on the root from outside the program stays queued and is named, but exit 0 still holds: it wakes only the root, which the script never stops"
+seed
+{
+	jq '.[]' "$S/queue.json"
+	msg msg_rootuser thr_root user "" app time "Also update the docs."
+} | jq -s . > "$S/queue.new" && mv "$S/queue.new" "$S/queue.json"
+out=$(run) && code=0 || code=$?
+expect "root-only exit" "$code" 0
+expect "root's own message left queued" "$(queued thr_root)" "msg_rootuser"
+expect "root's own message named" "$(grep -c '^  thr_root active msg_rootuser user' <<<"$out" || true)" 1
+expect "root never stopped" "$(calls "stop thr_root")" 0
+expect "root's program wake-ups still discarded" "$(jq -rs '[.[] | select(.threadId == "thr_root") | .id] | sort | join(" ")' "$S/storage/pause-tree-thr_root.jsonl" 2>/dev/null)" "msg_rootdue msg_roottell"
+for id in thr_sub thr_w1 thr_w2 thr_far thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
+
+echo "# queued work the program did not create on a descendant is left in place, its thread is not stopped, and the script stops"
 seed
 cat > "$S/extra.json" <<'EOF'
 [{"id":"thr_held","parentThreadId":"thr_root","status":"idle","visibility":"visible"}]
@@ -125,12 +166,17 @@ jq -s add "$S/threads.json" "$S/extra.json" > "$S/threads.new" && mv "$S/threads
 	msg msg_retry thr_held system "" "" plugin "Retry."
 	msg msg_outside thr_held agent thr_elsewhere cli time "From another program."
 	msg msg_userauto thr_held user "" plugin interaction $'[bb automation due:auto_user]\n\nNightly.'
+	msg msg_rootuser thr_root user "" app time "Also update the docs."
 } | jq -s . > "$S/queue.new" && mv "$S/queue.new" "$S/queue.json"
+jq '(.[] | select(.id == "thr_held")).projectId = "proj"' "$S/threads.json" > "$S/threads.new" && mv "$S/threads.new" "$S/threads.json"
 out=$(run) && code=0 || code=$?
 expect "held exit" "$code" 1
 expect "held left queued" "$(queued thr_held)" "msg_outside msg_retry msg_user msg_userauto"
 expect "held never stopped" "$(calls "stop thr_held")" 0
 expect "held named" "$(grep -c '^  thr_held idle msg_user user' <<<"$out" || true)" 1
+expect "root's own message left queued" "$(queued thr_root)" "msg_rootuser"
+expect "root's own message named" "$(grep -c '^  thr_root active msg_rootuser user' <<<"$out" || true)" 1
+expect "root never stopped" "$(calls "stop thr_root")" 0
 expect "auto_user paused" "$(enabled auto_user)" false
 for id in thr_sub thr_w1 thr_w2 thr_told thr_woken thr_behind thr_done; do expect "$id" "$(status "$id")" idle/none; done
 
