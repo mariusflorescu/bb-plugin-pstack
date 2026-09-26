@@ -31,7 +31,7 @@ Spawn all N workers before waiting on any. Write each brief to `$BB_THREAD_STORA
 
 Pick each worker's environment before spawning it. A worker that edits, builds or runs the code gets `--new-environment worktree`, its own checkout of committed files. A worker that only reads spawns into your environment (omit `--new-environment`), where it also sees your uncommitted changes, and its brief says it is read-only and must not edit files, commit or push. When the project is not a git repository, every worker spawns into your environment and writes only to its own output from step 5. To run a worker on another enrolled machine, read-only or not, give it `--machine <name> --new-environment worktree` in place of `--environment`. BB rejects `--machine` next to an existing environment ID, because that environment already fixes the machine.
 
-When a worktree worker must start from anything but the project default branch, pass `--base-branch <ref>`. A local branch or commit SHA works on this machine. A worker on another machine needs a pushed branch, `origin/<branch>`. To hand a worktree worker your uncommitted changes, commit them and pass that SHA.
+Pin every worktree worker to one commit, resolved once before the fan-out, so workers racing the same brief start from the same code: `--base-branch "$(git rev-parse HEAD)"` after committing your uncommitted changes, or `--base-branch "$(git rev-parse <branch>)"` for another local branch. A worker on another machine needs a pushed ref: push first and pass `--base-branch origin/<branch>`.
 
 Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. The worker's final message is its report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that can prove a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 
@@ -43,7 +43,7 @@ for id in <worker ids>; do
 done
 ```
 
-A worker that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the worker's model or effort, at spawn or when the worker started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`, with `--machine <name>` in place of `--environment` for a worker you sent to another machine. Spawn that worker again on it with the same brief and environment flags, and say so. If a worker drops out for any other reason, proceed with N-1 and note it.
+A worker that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the worker's model or effort, at spawn or when the worker started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`, with `--machine <name>` in place of `--environment` for a worker you sent to another machine. Spawn that worker again on it with the same brief and environment flags, and say so. For any other failure, run the provider-retry check in the pstack delegation rules first. A worker that is not coming back is a dropout: cancel its pending retry and stop it, so it cannot resume writing, then proceed with N-1 and note it.
 
 ## Phase C: Aggregate
 

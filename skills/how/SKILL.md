@@ -20,7 +20,7 @@ for id in <child ids>; do
 done
 ```
 
-`bb thread output` prints the child's final message. A child that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the role's model or effort, at spawn or when the child started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that child again on it with the same brief, and say so. For any other failure, say which child dropped.
+`bb thread output` prints the child's final message. A child that fails lands in status `error`, and its wait exits at once saying so. Read the failure with `bb thread log <id> --format minimal`. If the provider rejected the role's model or effort, at spawn or when the child started, pick the closest model of the same family and an effort it lists from `bb provider models <provider> --environment "$BB_ENVIRONMENT_ID" --json`. Spawn that child again on it with the same brief, and say so. For any other failure, run the provider-retry check in the pstack delegation rules first. A child that is not coming back is a dropout: cancel its pending retry and stop it, then say which child dropped.
 
 ## Step 1. Assess Complexity
 
