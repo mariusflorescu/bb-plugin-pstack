@@ -6,8 +6,13 @@
 # parent, and a stop leaves queued messages to dispatch later, so each pass
 # walks the whole tree again, pauses the automations aimed at it in every
 # project a thread of it lives in, discards the queued wake-ups this program
-# created on the thread and every descendant, and stops what still runs, until
-# one pass finds every descendant settled. A queued message is the program's
+# created on the thread and every descendant, and stops each descendant, until
+# one pass finds every descendant settled. A machine can still run a turn for a
+# thread BB lists as idle or error, and only an explicit stop interrupts it, so
+# every descendant takes at least one stop that succeeds whatever its status,
+# and one that runs again takes another. A descendant is settled once it has
+# taken such a stop and a later pass lists it idle or error with no queued work
+# of the program. A queued message is the program's
 # when a thread in this tree sent it or it is the due notice of an automation a
 # thread in this tree created. Before a message is discarded, it is saved as one
 # JSON line, one per message id, to $BB_THREAD_STORAGE/pause-tree-<thread-id>.jsonl
@@ -70,7 +75,8 @@ pause_automations() {
 }
 
 rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
-held=""; settled=no
+# $stopped holds each descendant whose `bb thread stop` succeeded.
+held=""; stopped=""; settled=no
 for pass in 1 2 3 4 5 6 7 8 9 10; do
 	tree_ids=$(printf '%s\n%s\n' "$root" "$(cut -f1 <<<"$rows")")
 	acted=no
@@ -101,10 +107,15 @@ for pass in 1 2 3 4 5 6 7 8 9 10; do
 				or (.origin == "plugin" and ([$text | capture("^\\[bb automation due:(?<a>[^\\]]+)\\]") | .a][0] // "" | IN($own[]))))]
 			| @tsv' <<<"$queue")
 	done
-	busy=$(HELD="$held" awk -F'\t' 'BEGIN { n = split(ENVIRON["HELD"], h, "\n"); for (i = 1; i <= n; i++) skip[h[i]] = 1 }
-		$2 ~ /^(pending|starting|active|stopping)$/ && !($1 in skip) { print $1 }' <<<"$rows")
+	# Every descendant still running or never stopped, bar those holding another program's messages.
+	busy=$(HELD="$held" STOPPED="$stopped" awk -F'\t' 'BEGIN { n = split(ENVIRON["HELD"], h, "\n"); for (i = 1; i <= n; i++) skip[h[i]] = 1
+			n = split(ENVIRON["STOPPED"], s, "\n"); for (i = 1; i <= n; i++) done[s[i]] = 1 }
+		($2 ~ /^(pending|starting|active|stopping)$/ || !($1 in done)) && !($1 in skip) { print $1 }' <<<"$rows")
 	[ -z "$busy" ] && [ "$acted" = no ] && { settled=yes; break; }
-	for id in $busy; do bb thread stop "$id" >/dev/null && echo "stopped $id" || echo "warn: bb thread stop $id failed" >&2; done
+	for id in $busy; do
+		if bb thread stop "$id" >/dev/null; then echo "stopped $id"; stopped=$(printf '%s\n%s' "$stopped" "$id")
+		else echo "warn: bb thread stop $id failed" >&2; fi
+	done
 	sleep "$settle"
 	rows=$(tree "$root") || { echo "error: cannot list the threads under $root" >&2; exit 1; }
 done
@@ -126,10 +137,11 @@ if [ "$settled" = yes ] && [ -z "$held" ]; then
 	exit 0
 fi
 [ "$settled" = no ] && {
-	echo "error: not settled after 10 rounds of stops (thread, status, queued work):" >&2
-	BUSY="$busy" HELD="$held" awk -F'\t' 'BEGIN { n = split(ENVIRON["BUSY"], b, "\n"); for (i = 1; i <= n; i++) show[b[i]] = 1
-			n = split(ENVIRON["HELD"], h, "\n"); for (i = 1; i <= n; i++) skip[h[i]] = 1 }
-		$1 in show || ($3 != "none" && !($1 in skip)) { print "  " $1, $2, $3 }' <<<"$rows" >&2
+	echo "error: not settled after 10 rounds of stops (thread, status, queued work, whether a stop succeeded):" >&2
+	BUSY="$busy" HELD="$held" STOPPED="$stopped" awk -F'\t' 'BEGIN { n = split(ENVIRON["BUSY"], b, "\n"); for (i = 1; i <= n; i++) show[b[i]] = 1
+			n = split(ENVIRON["HELD"], h, "\n"); for (i = 1; i <= n; i++) skip[h[i]] = 1
+			n = split(ENVIRON["STOPPED"], s, "\n"); for (i = 1; i <= n; i++) done[s[i]] = 1 }
+		$1 in show || ($3 != "none" && !($1 in skip)) { print "  " $1, $2, $3, (($1 in done) ? "stopped" : "never-stopped") }' <<<"$rows" >&2
 }
 [ -n "$held" ] && {
 	echo "error: left queued messages this program did not create, and never stopped their threads (thread, status, message, initiator, sender, waiting on):" >&2

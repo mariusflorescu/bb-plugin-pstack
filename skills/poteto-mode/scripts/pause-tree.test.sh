@@ -3,7 +3,9 @@
 # A stub `bb` holds a coordinator, sub-coordinator and worker tree with a hidden
 # worker and a worker in another project, and behaves the way BB does: a stop
 # leaves the queue alone, a message queued behind a turn dispatches when that
-# turn ends, a stopped child's report wakes its idle parent, a thread list
+# turn ends, a stopped child's report wakes its idle parent, a machine can
+# still run a turn for a thread listed idle or error until a stop interrupts
+# it, a thread list
 # derives queuedWork from the queue, and automations are listed and paused one
 # project at a time.
 # Asserts the end state of every thread, queued message and automation.
@@ -38,10 +40,13 @@ case "\$1 \$2" in
 	"thread stop")
 		id="\$3"
 		echo "stop \$id" >> "\$calls"
+		# STOPFAIL: the stop call fails and nothing changes.
+		[ "\$id" = "\${STOPFAIL:-}" ] && { echo "cannot stop \$id" >&2; exit 1; }
 		[ "\$id" = "\${STUCK:-}" ] && { update "\$state" --arg id "\$id" 'map(if .id == \$id then .status = "stopping" else . end)'; exit 0; }
-		busy=\$(jq -r --arg id "\$id" '.[] | select(.id == \$id) | .status | IN("pending", "starting", "active", "stopping")' "\$state")
+		# machineTurn: the machine still runs a turn that the listed status (idle, error) does not show.
+		busy=\$(jq -r --arg id "\$id" '.[] | select(.id == \$id) | (.status | IN("pending", "starting", "active", "stopping")) or .machineTurn == true' "\$state")
 		[ "\$busy" = true ] || exit 0
-		update "\$state" --arg id "\$id" 'map(if .id == \$id then .status = "idle" else . end)'
+		update "\$state" --arg id "\$id" 'map(if .id == \$id then .status = "idle" | del(.machineTurn) else . end)'
 		parent=\$(jq -r --arg id "\$id" '.[] | select(.id == \$id) | .parentThreadId // ""' "\$state")
 		[ -n "\$parent" ] && update "\$state" --arg p "\$parent" 'map(if .id == \$p and .status == "idle" then .status = "active" else . end)'
 		next=\$(jq -r --arg id "\$id" '[.[] | select(.threadId == \$id and (.waitingOn == null or .waitingOn.kind == "thread-busy"))][0].id // ""' "\$queue")
@@ -188,6 +193,29 @@ seed
 out=$(run STUCK=thr_w1) && code=0 || code=$?
 expect "stuck exit" "$code" 1
 expect "stuck thread named" "$(grep -c 'thr_w1 stopping' <<<"$out")" 1
+
+echo "# every descendant takes a stop whatever its listed status: a turn still running on the machine of a thread listed idle or error is interrupted"
+seed
+cat > "$S/extra.json" <<'EOF'
+[{"id":"thr_failed","projectId":"proj","parentThreadId":"thr_sub","status":"error","visibility":"visible","machineTurn":true}]
+EOF
+jq -s add "$S/threads.json" "$S/extra.json" > "$S/threads.new" && mv "$S/threads.new" "$S/threads.json"
+jq '(.[] | select(.id == "thr_done")).machineTurn = true' "$S/threads.json" > "$S/threads.new" && mv "$S/threads.new" "$S/threads.json"
+out=$(run) && code=0 || code=$?
+expect "listed-idle exit" "$code" 0
+expect "no machine turn left running" "$(jq -r '[.[] | select(.machineTurn == true) | .id] | join(" ")' "$S/threads.json")" ""
+for id in thr_sub thr_w1 thr_w2 thr_far thr_told thr_woken thr_behind thr_done thr_failed; do
+	expect "$id stopped at least once" "$([ "$(calls "stop $id")" -ge 1 ] && echo yes || echo no)" yes
+done
+expect "root never stopped" "$(calls "stop thr_root")" 0
+expect "thr_elsewhere never stopped" "$(calls "stop thr_elsewhere")" 0
+
+echo "# a descendant whose stop fails is not settled, whatever its listed status"
+seed
+out=$(run STOPFAIL=thr_done) && code=0 || code=$?
+expect "stop-failed exit" "$code" 1
+expect "stop-failed thread named" "$(grep -c '^  thr_done idle none never-stopped$' <<<"$out" || true)" 1
+expect "stop-failed never reports settled" "$(grep -c '^settled ' <<<"$out" || true)" 0
 
 echo "# nothing is discarded unless its recovery row is saved first: a missing, read-only or unreadable recovery file stops the run"
 for setup in missing readonly corrupt; do
