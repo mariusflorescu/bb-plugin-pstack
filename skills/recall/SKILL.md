@@ -14,7 +14,7 @@ Your context lives in two records. Your own chat history holds what you did and 
 
 Your chat history is BB's thread record.
 
-- `scripts/project-threads.sh <days> [topic]` lists this project's threads updated in the last `<days>` days, newest first, skipping the current thread. With a topic it keeps only threads whose raw log mentions it, with a match count. Don't use `bb thread search`. It searches every project and has no project filter.
+- `scripts/project-threads.sh <days> [topic]` lists this project's threads updated in the last `<days>` days, hidden and archived ones included, newest first, skipping the current thread. With a topic it keeps only threads whose raw log mentions it, with a match count. Don't use `bb thread search`. It searches every project and has no project filter.
 - `bb thread log <id> --format verbose --all` reads a whole thread as a timeline. Without `--all` it shows only the newest 20 user turns. The raw events (`--format json --all`) are the only view that keeps every command and its output.
 - `bb thread output <id>` gives a thread's final answer.
 

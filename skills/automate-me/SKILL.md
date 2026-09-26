@@ -26,9 +26,9 @@ Update mode changes the rest of the flow:
 
 ### 1. Mine their history
 
-Scope the history before fanning out. Use only the current project (`$BB_PROJECT_ID`). Don't read other projects' threads. That crosses project boundaries and reads private chats from unrelated projects. `bb thread list --project "$BB_PROJECT_ID" --json` lists its threads with `updatedAt`.
+Scope the history before fanning out. Use only the current project (`$BB_PROJECT_ID`). Don't read other projects' threads. That crosses project boundaries and reads private chats from unrelated projects. `../recall/scripts/project-threads.sh <days>` lists its threads updated in the last `<days>` days, hidden and archived ones included, newest first.
 
-Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by `updatedAt` into 3 slices so each has enough material). Each slice's brief names its time range and thread IDs. The child reads each of those threads whole with `bb thread log <id> --format verbose --all`, where the user's follow-up turns carry most corrections and stated preferences, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
+Survey recent agent conversations within that scope for recurring patterns. Spawn parallel child threads on your `swarm workers` model, per the pstack delegation rules, across slices of history (e.g. last 2-4 weeks, split by the `updated` column into 3 slices so each has enough material). Each slice's brief names its time range and thread IDs. The child reads each of those threads whole with `bb thread log <id> --format verbose --all`, where the user's follow-up turns carry most corrections and stated preferences, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers (`@thread:<id>`). Default signals worth hunting:
 
 - Response preferences (length, tone, format, "dumb it down" corrections)
 - Delegation habits (subagents, models, specialized workflows, parallelism)

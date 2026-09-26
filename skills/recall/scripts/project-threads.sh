@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# List this project's threads updated in the last <days> days, newest first,
-# skipping the current thread. With a topic, keep only threads whose raw log
-# mentions it (case-insensitive) and count the matching events.
+# List this project's threads updated in the last <days> days, hidden and
+# archived ones included, newest first, skipping the current thread. With a
+# topic, keep only threads whose raw log mentions it (case-insensitive) and
+# count the matching events.
 # Usage: project-threads.sh <days> [topic]
 # Output (TSV): updated	thread	parent	hits	title
 set -euo pipefail
@@ -18,7 +19,7 @@ topic="${2:-}"
 since_ms=$(( ($(date +%s) - days * 86400) * 1000 ))
 
 printf 'updated\tthread\tparent\thits\ttitle\n'
-bb thread list --project "$BB_PROJECT_ID" --json |
+bb thread list --project "$BB_PROJECT_ID" --include-hidden --json |
 	jq -r --argjson since "$since_ms" --arg self "${BB_THREAD_ID:-}" '
 		map(select(.updatedAt >= $since and .id != $self))
 		| sort_by(-.updatedAt)[]
