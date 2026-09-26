@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Read-only worktree prune audit. Classifies every git worktree by size, merge
-# state, work that removal would lose, remote/PR state, and BB usage: the BB
-# environments at its path on this machine, the threads in them or in this
+# state, work that removal would lose and a hash of it, remote/PR state, and BB
+# usage: the BB environments at its path on this machine, the threads in them or in this
 # repo's projects whose logs name the path, whether any of those or an ancestor
 # is pinned or running, and which other environments archiving its threads
 # would cascade into. Emits a table sorted by size with a suggested bucket.
@@ -45,6 +45,19 @@ mentioned_worktrees() {
 	found+=$(resolved_paths <<<"$log" | WTS="$wts" awk 'BEGIN { n = split(ENVIRON["WTS"], w, "\n") }
 		{ for (i = 1; i <= n; i++) if (w[i] != "" && ($0 == w[i] || index($0, w[i] "/") == 1)) print w[i] }') || return 1
 	printf '%s\n' "$found" | sed '/^$/d' | sort -u
+}
+
+# The work removing a worktree loses, as one hash: HEAD, the tracked diff
+# against it, and each untracked file's path and content. Counts stay the same
+# when one file is swapped for another, so an approval to lose work binds to
+# this. A path git has to quote fails the hash, and the row holds.
+snapshot() {
+	local head diff paths blobs=""
+	head=$(git -C "$1" rev-parse HEAD) || return 1
+	diff=$(git -C "$1" diff HEAD --binary --no-ext-diff --no-textconv --no-color) || return 1
+	paths=$(git -C "$1" -c core.quotePath=false ls-files --others --exclude-standard) || return 1
+	[ -n "$paths" ] && { blobs=$(git -C "$1" hash-object --stdin-paths <<<"$paths") || return 1; }
+	printf '%s\n%s\n%s\n%s\n' "$head" "$diff" "$paths" "$blobs" | git hash-object --stdin | cut -c1-12
 }
 
 # Main worktree is the first entry; everything else is a candidate.
@@ -149,7 +162,7 @@ if [ "$bb_known" = yes ]; then
 fi
 now=$(date +%s)
 
-printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tENV\tLAST_THREAD\tCASCADE\tMENTIONS\tBUCKET\tWORKTREE\n"
+printf "SIZE\tAGE\tMERGED\tDIRTY\tSNAPSHOT\tREMOTE\tPR\tENV\tLAST_THREAD\tCASCADE\tMENTIONS\tBUCKET\tWORKTREE\n"
 
 while read -r wt; do
 	[ -z "$wt" ] && continue
@@ -178,6 +191,9 @@ while read -r wt; do
 			&& dirty="${dirty:+$dirty+}unreachable"
 		dirty="${dirty:-clean}"
 	else dirty="?"; fi
+	snap=-
+	[ "$dirty" = "?" ] && snap="?"
+	[ "$dirty" != clean ] && [ "$dirty" != "?" ] && { snap=$(snapshot "$wt" 2>/dev/null) || snap="?"; }
 
 	if [ -z "$branch" ]; then remote=detached
 	elif git -C "$wt" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
@@ -201,16 +217,17 @@ while read -r wt; do
 	fi
 	recent=$([ "${last_ts:-0}" -gt 0 ] && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
 
-	# First match wins, so every hold outranks every go.
-	if [ "$bb_known" != yes ] || [ "$dirty" = "?" ]; then bucket=hold-unknown
-	elif [ "$dirty" != clean ]; then bucket=hold-wip
+	# First match wins, so every hold outranks every go, and the holds a user
+	# cannot release outrank the ones they can.
+	if [ "$bb_known" != yes ] || [ "$dirty" = "?" ] || [ "$snap" = "?" ]; then bucket=hold-unknown
 	elif [ "${pinned:-0}" -gt 0 ] || [ "${running:-0}" -gt 0 ]; then bucket=hold-in-use
 	elif [ "$cascade" != "-" ]; then bucket=hold-cascade
+	elif [ "$dirty" != clean ]; then bucket=hold-wip
 	elif [[ "$pr" == *OPEN* ]]; then bucket=hold-open-pr
 	elif [ "$recent" = yes ]; then bucket=verify-recent-chat
 	elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
 	else bucket=review; fi
 
-	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-		"$size" "$age" "$merged" "$dirty" "$remote" "$pr" "$env" "$last" "$cascade" "$named" "$bucket" "$wt"
+	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+		"$size" "$age" "$merged" "$dirty" "$snap" "$remote" "$pr" "$env" "$last" "$cascade" "$named" "$bucket" "$wt"
 done <<<"$wts" | sort -t$'\t' -k1,1 -rh
