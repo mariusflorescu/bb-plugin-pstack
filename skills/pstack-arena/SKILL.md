@@ -46,7 +46,7 @@ A worktree candidate's files live at `.environment.path` in `bb thread show <id>
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, spawn one judge per the pstack delegation rules on the first entry of your arena cross-judge pool whose model family differs from yours, titled `arena judge: <slug>`. It shares your environment, and its brief says it is read-only and must not edit files, commit or push. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Collect it with a background `bb thread wait` then `bb thread output` while you read, and reseat it per Phase B if its provider rejects the model. Don't spawn the judge while candidates are still writing.
+After all Phase B candidates complete, spawn one judge per the pstack delegation rules, titled `arena judge: <slug>`. Prefer a different model family from yours. Take the first entry of your arena cross-judge pool whose family differs. If none does, take the first entry and state in the synthesis note that the judge shares your family. The judge shares your environment, and its brief says it is read-only and must not edit files, commit or push. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Collect it with a background `bb thread wait` then `bb thread output` while you read, and reseat it per Phase B if its provider rejects the model. Don't spawn the judge while candidates are still writing.
 
 ## Phase D: Pick a base
 
