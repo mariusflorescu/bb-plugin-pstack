@@ -9,6 +9,7 @@
 // Upstream: cursor/plugins pstack, MIT, (c) 2026 Lauren Tan. See README.md and
 // MANIFEST.md for the pinned commit and the adaptations applied.
 import type { BbPluginApi, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
+import { parsePotetoMode } from "./src/poteto-mode.ts";
 
 // Literal on purpose: a renamed or removed skill fails this plugin's selection
 // closed (bb rejects unknown names), instead of silently dropping it.
@@ -159,6 +160,19 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
   codex: "Codex's built-in subagents",
 };
 
+// poteto-mode's standing note, for a thread whose mode is on. The rules leave
+// room for 400 characters. BB's Codex threads have no plan tool, so the Codex
+// note names a checklist file instead.
+export const POTETO_NOTES: Record<string, string> = {
+  "claude-code":
+    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
+  codex:
+    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. Child briefs open with $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
+};
+
+const POTETO_NOTE_FALLBACK =
+  "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
+
 // A role whose entry is this runs on the parent thread's own provider and model.
 const INHERIT_PARENT = "inherit-parent";
 
@@ -219,14 +233,15 @@ ${pathSection}${roleSection}`;
 
 // The block every thread receives. What does not fit whole is replaced by
 // where to read it, role models last, so BB's truncation never cuts an entry
-// in half.
-export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[]): string {
+// in half. The note leads every candidate, so truncation never reaches it.
+export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[], note: string): string {
   const pathSections = pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
   const roleSections = [
     `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`,
     `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`,
   ];
-  const candidates = roleSections.flatMap((roles) => pathSections.map((paths) => rules(providerId, model, paths, roles)));
+  const lead = note === "" ? "" : `${note}\n\n`;
+  const candidates = roleSections.flatMap((roles) => pathSections.map((paths) => lead + rules(providerId, model, paths, roles)));
   return candidates.find((text) => text.length <= INSTRUCTIONS_LIMIT) ?? candidates[candidates.length - 1];
 }
 
@@ -271,6 +286,7 @@ export default async function plugin(bb: BbPluginApi) {
       const globs = SKILL_PATHS[name];
       return globs ? [[name, globs]] : [];
     });
+    const potetoModeOn = enabled.includes("poteto-mode") && parsePotetoMode(context.pluginMetadata) === "on";
     return {
       tools: [],
       skills: enabled,
@@ -278,7 +294,8 @@ export default async function plugin(bb: BbPluginApi) {
         context.provider.id,
         context.provider.model,
         typeof current.models === "string" ? current.models : "",
-        pathSkills
+        pathSkills,
+        potetoModeOn ? (POTETO_NOTES[context.provider.id] ?? POTETO_NOTE_FALLBACK) : ""
       ),
     };
   });
