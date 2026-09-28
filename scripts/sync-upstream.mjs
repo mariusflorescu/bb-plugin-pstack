@@ -240,7 +240,7 @@ function main() {
         const base = upstreamSide(change.baseMode, change.baseSha, change.path, aliased);
         const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, aliased);
         const { side, inTheWay } = localSide(ours);
-        plan.push({ ours, inTheWay, ...mergeFile(ours, base, side, theirs, scratch) });
+        plan.push({ ours, upstream: change.path, inTheWay, ...mergeFile(ours, base, side, theirs, scratch) });
       }
     }
   } finally {
@@ -260,7 +260,7 @@ function main() {
   for (const { ours, result } of plan) if (result) write(join(ROOT, ours), result);
   writeFileSync(PIN_FILE, readFileSync(PIN_FILE, "utf8").replace(/^sha=.*$/m, `sha=${to}`));
 
-  const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} (${file.reason})`);
+  const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} from ${file.upstream} (${file.reason})`);
   const lines = plan.map((file) => `${file.outcome.padEnd(9)} ${file.ours}${file.reason ? ` (${file.reason})` : ""}`);
   console.log(`${conflicts.length ? "conflicts" : "applied"}: ${pin.sha.slice(0, 7)}..${to.slice(0, 7)} in ${scope.join(", ")}`);
   console.log(`\nupstream commits:\n${commits}`);

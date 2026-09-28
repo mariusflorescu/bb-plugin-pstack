@@ -78,6 +78,10 @@ test("a file deleted here stays deleted and conflicts when upstream edits it", (
   });
   assert.equal(run.status, 2, run.stderr);
   assert.match(run.stdout, /^conflict +skills\/gone\/SKILL\.md \(deleted here, changed upstream\)$/m);
+  assert.equal(
+    run.stdout.split("\nconflicts to resolve:\n")[1],
+    "skills/gone/SKILL.md from pstack/skills/gone/SKILL.md (deleted here, changed upstream)\n"
+  );
   assert.equal(existsSync(at("skills/gone/SKILL.md")), false);
 });
 
@@ -321,4 +325,19 @@ test("a file that moves from a bundle into pstack/ collides too", () => {
   assert.equal(readFileSync(at("skills/deslop/SKILL.md"), "utf8"), "deslop\n");
   assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/skills/deslop\n`);
   assert.equal(git(dir, "status", "--porcelain"), "");
+});
+
+test("a conflict in a bundled skill names the upstream path it came from", () => {
+  const { run } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop"],
+    base: { "cursor-team-kit/skills/deslop/SKILL.md": "a\n" },
+    upstream: { "cursor-team-kit/skills/deslop/SKILL.md": "b\n" },
+    ours: { "skills/deslop/SKILL.md": "c\n" },
+  });
+  assert.equal(run.status, 2, run.stderr);
+  assert.equal(
+    run.stdout.split("\nconflicts to resolve:\n")[1],
+    "skills/deslop/SKILL.md from cursor-team-kit/skills/deslop/SKILL.md (edited on both sides, conflict markers in the file)\n"
+  );
 });
