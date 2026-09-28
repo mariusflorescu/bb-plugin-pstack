@@ -32,6 +32,9 @@
     "typecheck": "tsc --noEmit --skipLibCheck -p tsconfig.json",
     "build": "bb plugin build"
   },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
     "@types/node": "^22.0.0",
@@ -40,6 +43,7 @@
   },
   "files": [
     "server.ts",
+    "src",
     "skills",
     "docs",
     "assets",
