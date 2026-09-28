@@ -160,9 +160,7 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
   codex: "Codex's built-in subagents",
 };
 
-// poteto-mode's standing note, for a thread whose mode is on. The rules leave
-// room for 400 characters. BB's Codex threads have no plan tool, so the Codex
-// note names a checklist file instead.
+// BB's Codex threads have no plan tool, so the Codex note names a checklist file instead.
 export const POTETO_NOTES: Record<string, string> = {
   "claude-code":
     "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
@@ -179,8 +177,7 @@ const INHERIT_PARENT = "inherit-parent";
 // BB truncates a plugin's instructions past this many characters.
 const INSTRUCTIONS_LIMIT = 4096;
 
-// One budget for the dispatch hook's metadata read and write. BB fails the
-// message past 10 s, and every other dispatch waits on this pass meanwhile.
+// BB fails the message past 10 s, and every other dispatch waits on this pass meanwhile.
 const POTETO_MODE_TIMEOUT_MS = 3000;
 
 function parseModels(text: string): Map<string, string[]> {
@@ -237,7 +234,7 @@ ${pathSection}${roleSection}`;
 
 // The block every thread receives. What does not fit whole is replaced by
 // where to read it, role models last, so BB's truncation never cuts an entry
-// in half. The note leads every candidate, so truncation never reaches it.
+// in half.
 export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[], note: string): string {
   const pathSections = pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
   const roleSections = [
@@ -306,7 +303,6 @@ export default async function plugin(bb: BbPluginApi) {
     };
   });
 
-  // Passes re-run on drains and retries, so a thread already on gets no write.
   bb.experimental_hooks.on("message.dispatch", async (context) => {
     if (!potetoModeSkillOn() || !invokesPotetoMode(context.input.text)) return { action: "proceed" };
     const threadId = context.thread.id;
