@@ -232,3 +232,56 @@ test("a bundle= line that is not <plugin>/skills/<name> aborts before any write"
   assert.equal(readFileSync(at("skills/a/SKILL.md"), "utf8"), "one\n");
   assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/deslop\n`);
 });
+
+test("an upstream edit to a bundled skill merges into skills/<name>/", () => {
+  const { run, up, from, to, at } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop"],
+    base: { "cursor-team-kit/skills/deslop/SKILL.md": "a\nb\nc\n" },
+    upstream: { "cursor-team-kit/skills/deslop/SKILL.md": "a\nb\nC\n" },
+    ours: { "skills/deslop/SKILL.md": "A\nb\nc\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(
+    run.stdout.split("\n")[0],
+    `applied: ${from.slice(0, 7)}..${to.slice(0, 7)} in pstack/, cursor-team-kit/skills/deslop/, cursor-team-kit/LICENSE`
+  );
+  assert.match(run.stdout, /^merged +skills\/deslop\/SKILL\.md$/m);
+  assert.equal(readFileSync(at("skills/deslop/SKILL.md"), "utf8"), "A\nb\nC\n");
+  assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${to}\nbundle=cursor-team-kit/skills/deslop\n`);
+});
+
+test("a cursor-team-kit/LICENSE change lands in every bundled skill's directory", () => {
+  const { run, up, to, at } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop", "cursor-team-kit/skills/what-did-i-get-done"],
+    base: { "cursor-team-kit/LICENSE": "MIT 2025\n", "pstack/LICENSE": "pstack MIT\n" },
+    upstream: { "cursor-team-kit/LICENSE": "MIT 2026\n" },
+    ours: { "LICENSE": "pstack MIT\n", "skills/deslop/LICENSE": "MIT 2025\n", "skills/what-did-i-get-done/LICENSE": "MIT 2025\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(readFileSync(at("skills/deslop/LICENSE"), "utf8"), "MIT 2026\n");
+  assert.equal(readFileSync(at("skills/what-did-i-get-done/LICENSE"), "utf8"), "MIT 2026\n");
+  assert.equal(readFileSync(at("LICENSE"), "utf8"), "pstack MIT\n");
+  assert.equal(
+    readFileSync(at("UPSTREAM"), "utf8"),
+    `repo=${up}\npath=pstack\nsha=${to}\nbundle=cursor-team-kit/skills/deslop\nbundle=cursor-team-kit/skills/what-did-i-get-done\n`
+  );
+});
+
+test("a change to a cursor-team-kit skill that is not bundled is ignored", () => {
+  const { run, up, from, to, at } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop"],
+    base: { "cursor-team-kit/skills/deslop/SKILL.md": "deslop\n", "cursor-team-kit/skills/other/SKILL.md": "one\n" },
+    upstream: { "cursor-team-kit/skills/other/SKILL.md": "two\n" },
+    ours: { "skills/deslop/SKILL.md": "deslop\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(
+    run.stdout,
+    `up-to-date: no changes between ${from.slice(0, 7)} and ${to.slice(0, 7)} in pstack/, cursor-team-kit/skills/deslop/, cursor-team-kit/LICENSE\n`
+  );
+  assert.equal(existsSync(at("skills/other")), false);
+  assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/skills/deslop\n`);
+});

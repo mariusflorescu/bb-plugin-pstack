@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Apply upstream pstack changes (cursor/plugins, path pstack/) made after the
-// pinned SHA in UPSTREAM onto this repo with a real 3-way merge, then bump the
-// pin. Run from a clean checkout of this repo:
+// Apply upstream changes made after the pinned SHA in UPSTREAM (cursor/plugins,
+// path pstack/ and each bundle= skill listed there, with its plugin's LICENSE)
+// onto this repo with a real 3-way merge, then bump the pin. Run from a clean
+// checkout of this repo:
 //   node scripts/sync-upstream.mjs            sync to upstream main
 //   node scripts/sync-upstream.mjs --to <sha> sync to a specific upstream commit
 // Prints one status line first: "up-to-date", "applied" or "conflicts".
@@ -43,18 +44,22 @@ function parseBundle(path) {
   return { path, plugin, name };
 }
 
-// Upstream path -> our path, or null to drop the file. Mirrors MANIFEST.md.
-function mapPath(upstreamPath, prefix) {
-  if (!upstreamPath.startsWith(prefix + "/")) return null;
-  const p = upstreamPath.slice(prefix.length + 1);
-  if (p.startsWith(".cursor-plugin/") || p.startsWith("automations/")) return null;
-  if (p === "agents/poteto-agent.md") return null;
-  if (p === "agents/comment-sicko.md") return "skills/no-comments/references/comment-sicko.md";
-  if (p === "README.md") return "UPSTREAM-README.md";
+// Upstream path -> our paths, none to drop the file. Mirrors MANIFEST.md.
+function mapPath(upstreamPath, pin) {
+  const bundle = pin.bundles.find(({ path }) => upstreamPath.startsWith(path + "/"));
+  if (bundle) return [`skills/${bundle.name}/` + upstreamPath.slice(bundle.path.length + 1)];
+  const licensed = pin.bundles.filter(({ plugin }) => upstreamPath === `${plugin}/LICENSE`);
+  if (licensed.length) return licensed.map(({ name }) => `skills/${name}/LICENSE`);
+  if (!upstreamPath.startsWith(pin.path + "/")) return [];
+  const p = upstreamPath.slice(pin.path.length + 1);
+  if (p.startsWith(".cursor-plugin/") || p.startsWith("automations/")) return [];
+  if (p === "agents/poteto-agent.md") return [];
+  if (p === "agents/comment-sicko.md") return ["skills/no-comments/references/comment-sicko.md"];
+  if (p === "README.md") return ["UPSTREAM-README.md"];
   for (const name of ALIASED) {
-    if (p.startsWith(`skills/${name}/`)) return `skills/pstack-${name}/` + p.slice(`skills/${name}/`.length);
+    if (p.startsWith(`skills/${name}/`)) return [`skills/pstack-${name}/` + p.slice(`skills/${name}/`.length)];
   }
-  return p;
+  return [p];
 }
 
 // The pstack- aliases for skills that collide with other installs.
@@ -117,10 +122,10 @@ const filesUnder = (dir) =>
     entry.isDirectory() ? filesUnder(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]
   );
 
-// Changed paths under the upstream prefix with both sides' modes and blobs,
-// from git's own metadata: a side is absent only when git says so.
-function upstreamChanges(from, to, prefix) {
-  const fields = gitBuffer("diff", "--raw", "-z", "--no-renames", "--no-abbrev", from, to, "--", prefix + "/")
+// Changed paths in scope with both sides' modes and blobs, from git's own
+// metadata: a side is absent only when git says so.
+function upstreamChanges(from, to, scope) {
+  const fields = gitBuffer("diff", "--raw", "-z", "--no-renames", "--no-abbrev", from, to, "--", ...scope)
     .toString("utf8")
     .split("\0");
   const changes = [];
@@ -191,14 +196,19 @@ function write(abs, side) {
 function main() {
   const toFlag = process.argv.indexOf("--to");
   const pin = readPin();
+  const scope = [
+    `${pin.path}/`,
+    ...pin.bundles.map(({ path }) => `${path}/`),
+    ...new Set(pin.bundles.map(({ plugin }) => `${plugin}/LICENSE`)),
+  ];
   if (git("status", "--porcelain")) throw new Error("working tree is not clean");
 
   git("fetch", "--quiet", "--no-tags", pin.repo, "main:refs/upstream/main");
   const to = toFlag > -1 ? git("rev-parse", process.argv[toFlag + 1]) : git("rev-parse", "refs/upstream/main");
-  const commits = git("log", "--format=%h %s", `${pin.sha}..${to}`, "--", pin.path);
+  const commits = git("log", "--format=%h %s", `${pin.sha}..${to}`, "--", ...scope);
 
   if (!commits) {
-    console.log(`up-to-date: no ${pin.path}/ changes between ${pin.sha.slice(0, 7)} and ${to.slice(0, 7)}`);
+    console.log(`up-to-date: no changes between ${pin.sha.slice(0, 7)} and ${to.slice(0, 7)} in ${scope.join(", ")}`);
     return 0;
   }
 
@@ -206,17 +216,16 @@ function main() {
   const plan = [];
   const dropped = [];
   try {
-    for (const change of upstreamChanges(pin.sha, to, pin.path)) {
-      const ours = mapPath(change.path, pin.path);
-      if (ours === null) {
-        dropped.push(change.path);
-        continue;
+    for (const change of upstreamChanges(pin.sha, to, scope)) {
+      const targets = mapPath(change.path, pin);
+      if (!targets.length) dropped.push(change.path);
+      for (const ours of targets) {
+        const aliased = isText(ours) && !VERBATIM.has(ours);
+        const base = upstreamSide(change.baseMode, change.baseSha, change.path, aliased);
+        const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, aliased);
+        const { side, inTheWay } = localSide(ours);
+        plan.push({ ours, inTheWay, ...mergeFile(ours, base, side, theirs, scratch) });
       }
-      const aliased = isText(ours) && !VERBATIM.has(ours);
-      const base = upstreamSide(change.baseMode, change.baseSha, change.path, aliased);
-      const theirs = upstreamSide(change.theirsMode, change.theirsSha, change.path, aliased);
-      const { side, inTheWay } = localSide(ours);
-      plan.push({ ours, inTheWay, ...mergeFile(ours, base, side, theirs, scratch) });
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -237,7 +246,7 @@ function main() {
 
   const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} (${file.reason})`);
   const lines = plan.map((file) => `${file.outcome.padEnd(9)} ${file.ours}${file.reason ? ` (${file.reason})` : ""}`);
-  console.log(`${conflicts.length ? "conflicts" : "applied"}: ${pin.sha.slice(0, 7)}..${to.slice(0, 7)}`);
+  console.log(`${conflicts.length ? "conflicts" : "applied"}: ${pin.sha.slice(0, 7)}..${to.slice(0, 7)} in ${scope.join(", ")}`);
   console.log(`\nupstream commits:\n${commits}`);
   console.log(`\nfiles:\n${lines.join("\n") || "(none)"}`);
   if (dropped.length) console.log(`\ndropped (not shipped on BB):\n${dropped.join("\n")}`);
