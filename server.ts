@@ -196,24 +196,23 @@ const PATH_POINTER = "Before you read or edit a file, load each pstack skill who
 function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   const prefix = SKILL_PREFIX[providerId] ?? "/";
-  const userOnly = `Most are user-invoked only, so they are not in your skill list${
-    prefix === "/" ? "" : `. pstack text writes /<name>; here say and run ${prefix}<name>, and ask a user who types /<name> for ${prefix}<name>`
-  }`;
+  const translate =
+    prefix === "/" ? "" : ` pstack writes /<name>: say and run ${prefix}<name>, and ask users typing /<name> for ${prefix}<name>.`;
   return `## pstack delegation rules
 
-You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
+You run on ${providerId} / ${model}. A pstack spawn, delegate, subagent, runner, reviewer, explorer or worker is a BB child thread:
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Take provider, model and effort from the role's line below; an entry without @effort omits --reasoning-level. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment. Commit what it needs first: uncommitted changes do not reach a worktree. A worktree child on another machine (--machine) cannot see your local commits: push first and pass --base-branch origin/<your branch>. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
+Provider, model and effort come from the role's line below; no @effort, no --reasoning-level. Never use ${nativeTool} for a pstack role: that runs the wrong model, on your provider only. Panel roles spawn one child per entry. Parallel coding children get --new-environment worktree --base-branch "$(git rev-parse HEAD)", not --environment; commit what they need first, as worktrees miss uncommitted changes. With --machine, push and pass --base-branch origin/<your branch>: local commits stay here. A read-only child's brief says so. Spawn all of a step's children before waiting; collect them in one background command:
 
 for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
 
-A child that fails is in status error, and bb thread wait exits at once with an unreachable error instead of timing out. Read why with bb thread log <id> --format minimal. If its model or effort was rejected, pick a same-family model and a listed effort from bb provider models <provider> --environment <env> --json, where <env> is the child's .thread.environmentId in bb thread show <id> --json, not yours, respawn that seat with the same brief, and say so in your report. Otherwise check bb provider-retry status <id>. A retry listed there (overload or usage limit) restarts the child by itself: wait for it again after its time, or before handing its seat or files to another child run bb provider-retry cancel <id> and bb thread stop <id>. If none is listed, or that plugin is disabled, it is a dropout.
+A failed child is in status error; bb thread wait exits at once with an unreachable error, not a timeout. bb thread log <id> --format minimal says why. Rejected model or effort: respawn the seat, same brief, on a same-family model and listed effort from bb provider models <provider> --environment <env> --json (<env>: the child's .thread.environmentId in bb thread show <id> --json, not yours); report it. Otherwise a retry in bb provider-retry status <id> (overload or usage limit) restarts it: wait again after its time, or run bb provider-retry cancel <id> and bb thread stop <id> before reassigning its seat or files. No retry, or that plugin off: a dropout.
 
-Children report back here; follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
+Children report here; follow up with bb thread tell <id>. A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
 
-pstack skills name each other in bold, like **unslop**. ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
+pstack skills name each other in bold, like **unslop**; most are user-invoked only, so not in your skill list. Read one at ../<name>/SKILL.md from the naming skill's base directory, an unprefixed principle (**prove-it-works** principle skill) at ../principle-<name>/SKILL.md.${translate}
 
 ${pathSection}${roleSection}`;
 }

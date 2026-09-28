@@ -63,10 +63,11 @@ test("user-only skills are out of every skill list, and Codex is told its users 
   const claude = await instructions("", { provider: "claude-code" });
   assert.ok(
     codex.includes(
-      "Most are user-invoked only, so they are not in your skill list. pstack text writes /<name>; here say and run $<name>, and ask a user who types /<name> for $<name>. Read a named skill"
+      "most are user-invoked only, so not in your skill list. Read one at ../<name>/SKILL.md from the naming skill's base directory, an unprefixed principle (**prove-it-works** principle skill) at ../principle-<name>/SKILL.md. pstack writes /<name>: say and run $<name>, and ask users typing /<name> for $<name>.\n\n"
     )
   );
-  assert.ok(claude.includes("Most are user-invoked only, so they are not in your skill list. Read a named skill"));
+  assert.ok(claude.includes("most are user-invoked only, so not in your skill list. Read one at"));
+  assert.ok(claude.includes("at ../principle-<name>/SKILL.md.\n\n"));
   assert.equal(claude.includes("$<name>"), false);
 });
 
