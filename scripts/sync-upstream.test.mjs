@@ -285,3 +285,40 @@ test("a change to a cursor-team-kit skill that is not bundled is ignored", () =>
   assert.equal(existsSync(at("skills/other")), false);
   assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/skills/deslop\n`);
 });
+
+test("two upstream paths that map to one of ours abort before any write", () => {
+  const { run, up, from, at, dir } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop"],
+    base: { "cursor-team-kit/skills/deslop/SKILL.md": "deslop\n", "pstack/skills/a/SKILL.md": "one\n" },
+    upstream: { "pstack/skills/a/SKILL.md": "two\n", "pstack/skills/deslop/SKILL.md": "pstack deslop\n" },
+    ours: { "skills/deslop/SKILL.md": "deslop\n", "skills/a/SKILL.md": "one\n" },
+  });
+  assert.equal(run.status, 1);
+  assert.equal(
+    run.stderr,
+    "error: skills/deslop/SKILL.md maps from both cursor-team-kit/skills/deslop/SKILL.md and pstack/skills/deslop/SKILL.md\n"
+  );
+  assert.equal(readFileSync(at("skills/deslop/SKILL.md"), "utf8"), "deslop\n");
+  assert.equal(readFileSync(at("skills/a/SKILL.md"), "utf8"), "one\n");
+  assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/skills/deslop\n`);
+  assert.equal(git(dir, "status", "--porcelain"), "");
+});
+
+test("a file that moves from a bundle into pstack/ collides too", () => {
+  const { run, up, from, at, dir } = sync({
+    prefix: "",
+    bundles: ["cursor-team-kit/skills/deslop"],
+    base: { "cursor-team-kit/skills/deslop/SKILL.md": "deslop\n" },
+    upstream: { "cursor-team-kit/skills/deslop/SKILL.md": null, "pstack/skills/deslop/SKILL.md": "deslop\n" },
+    ours: { "skills/deslop/SKILL.md": "deslop\n" },
+  });
+  assert.equal(run.status, 1);
+  assert.equal(
+    run.stderr,
+    "error: skills/deslop/SKILL.md maps from both cursor-team-kit/skills/deslop/SKILL.md and pstack/skills/deslop/SKILL.md\n"
+  );
+  assert.equal(readFileSync(at("skills/deslop/SKILL.md"), "utf8"), "deslop\n");
+  assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/skills/deslop\n`);
+  assert.equal(git(dir, "status", "--porcelain"), "");
+});

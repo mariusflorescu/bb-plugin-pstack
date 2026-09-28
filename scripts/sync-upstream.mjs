@@ -136,6 +136,21 @@ function upstreamChanges(from, to, scope) {
   return changes;
 }
 
+// Both ends of the range, since a file that moves from a bundle into pstack/
+// inside it exists at only one end each.
+function checkCollisions(from, to, scope, pin) {
+  const paths = new Set(
+    [from, to].flatMap((rev) => gitBuffer("ls-tree", "-r", "-z", "--name-only", rev, "--", ...scope).toString("utf8").split("\0").filter(Boolean))
+  );
+  const sources = new Map();
+  for (const path of [...paths].sort()) {
+    for (const ours of mapPath(path, pin)) {
+      if (sources.has(ours)) throw new Error(`${ours} maps from both ${sources.get(ours)} and ${path}`);
+      sources.set(ours, path);
+    }
+  }
+}
+
 const same = (x, y) => x === y || (x !== null && y !== null && x.mode === y.mode && x.content.equals(y.content));
 const conflict = (reason, result) => ({ outcome: "conflict", reason, result });
 
@@ -211,6 +226,7 @@ function main() {
     console.log(`up-to-date: no changes between ${pin.sha.slice(0, 7)} and ${to.slice(0, 7)} in ${scope.join(", ")}`);
     return 0;
   }
+  checkCollisions(pin.sha, to, scope, pin);
 
   const scratch = mkdtempSync(join(tmpdir(), "pstack-sync-"));
   const plan = [];
