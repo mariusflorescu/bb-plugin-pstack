@@ -212,13 +212,21 @@ it("collapses to an icon-sized control named by its state on compact viewports",
   expect(chip.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe("Layers");
 });
 
-it("explains in a tooltip that the change applies from the next message", async () => {
+it("explains in a tooltip that a switch waits for the thread's next session rebuild", async () => {
   const user = userEvent.setup();
-  const slot = renderChip({ threadId: "thr_tooltip", threads: backend({ thr_tooltip: { potetoMode: "on" } }).threads });
+  const on = renderChip({ threadId: "thr_tooltip_on", threads: backend({ thr_tooltip_on: { potetoMode: "on" } }).threads });
 
-  await findChip(slot, "poteto-mode on. Turn it off.");
+  await findChip(on, "poteto-mode on. Turn it off.");
   await user.tab();
   expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "Click to turn poteto-mode off. Applies from the next message.",
+    "Click to turn poteto-mode off at this thread's next session rebuild, such as a BB restart. To stop sooner, tell the agent to stop poteto-mode.",
+  );
+  cleanup();
+
+  const off = renderChip({ threadId: "thr_tooltip_off", threads: backend({ thr_tooltip_off: { potetoMode: "off" } }).threads });
+  await findChip(off, "poteto-mode off. Turn it on.");
+  await user.tab();
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "Click to turn poteto-mode on at this thread's next session rebuild, such as a BB restart.",
   );
 });

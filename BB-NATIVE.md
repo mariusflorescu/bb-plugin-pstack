@@ -26,7 +26,10 @@ to it as "the pstack delegation rules"; they do not restate the mapping.
 While a thread's poteto-mode is on, `server.ts` puts poteto-mode's standing
 note in front of that block. A message with a `/poteto-mode` or
 `$poteto-mode` line turns the mode on, and the chip in the thread header
-turns it off.
+turns it off or back on. BB applies the block only when it builds the
+thread's session, at the first message or a later rebuild such as a BB
+restart, so a switch in the middle of a thread takes effect at the next
+rebuild.
 
 ## Translation table
 

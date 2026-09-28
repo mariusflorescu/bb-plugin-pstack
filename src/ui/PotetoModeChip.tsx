@@ -19,9 +19,19 @@ import {
   type PotetoModeMetadata,
 } from "../poteto-mode";
 
-const CHIPS: Record<PotetoMode, { text: string; next: PotetoMode; className: string }> = {
-  on: { text: "poteto-mode", next: "off", className: "bg-secondary text-secondary-foreground" },
-  off: { text: "poteto-mode off", next: "on", className: "border border-border text-muted-foreground" },
+const CHIPS: Record<PotetoMode, { text: string; next: PotetoMode; hint: string; className: string }> = {
+  on: {
+    text: "poteto-mode",
+    next: "off",
+    hint: "Click to turn poteto-mode off at this thread's next session rebuild, such as a BB restart. To stop sooner, tell the agent to stop poteto-mode.",
+    className: "bg-secondary text-secondary-foreground",
+  },
+  off: {
+    text: "poteto-mode off",
+    next: "on",
+    hint: "Click to turn poteto-mode on at this thread's next session rebuild, such as a BB restart.",
+    className: "border border-border text-muted-foreground",
+  },
 };
 
 export function PotetoModeChip({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
@@ -83,7 +93,7 @@ export function PotetoModeChip({ threadId, isCompactViewport }: PluginThreadHead
           {isCompactViewport ? <Icon name="Layers" aria-hidden /> : chip.text}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Click to turn poteto-mode {chip.next}. Applies from the next message.</TooltipContent>
+      <TooltipContent>{chip.hint}</TooltipContent>
     </Tooltip>
   );
 }
