@@ -1,6 +1,6 @@
 # pstack for bb
 
-pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin ships it to bb as 49 skills, adapted so every delegation runs as a bb child thread on the model you picked for that role.
+pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin ships it to bb as 50 skills, adapted so every delegation runs as a bb child thread on the model you picked for that role.
 
 ## Install
 
@@ -27,7 +27,7 @@ The plugin injects the pstack delegation rules into every thread. They say that 
 
 Three skills carry a `pstack-` prefix to avoid clashing with common personal skills: `/pstack-arena`, `/pstack-tdd` and `/pstack-blast-radius`.
 
-Two skills come from Cursor's `cursor-team-kit` plugin, which upstream pstack names but doesn't bundle. `/thermo-nuclear-code-quality-review` is a harsh one-pass maintainability review of the current branch. `deslop` strips AI code slop from the diff, and poteto-mode runs it before every commit. [MANIFEST.md](./MANIFEST.md) records where they came from.
+Three skills come from Cursor's `cursor-team-kit` plugin. Upstream pstack names the first two but doesn't bundle them. `/thermo-nuclear-code-quality-review` is a harsh one-pass maintainability review of the current branch. `deslop` strips AI code slop from the diff, and poteto-mode runs it before every commit. `what-did-i-get-done` sums up the commits you authored in a time range as a short status update. [MANIFEST.md](./MANIFEST.md) records where they came from.
 
 ## Staying current with upstream
 

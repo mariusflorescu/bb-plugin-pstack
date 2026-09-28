@@ -61,6 +61,7 @@ const SKILL_NAMES = [
   "thermo-nuclear-code-quality-review",
   "typescript-best-practices",
   "unslop",
+  "what-did-i-get-done",
   "why",
 ] as const;
 
@@ -116,6 +117,7 @@ const SKILL_SUMMARIES: Record<SkillName, string> = {
   "thermo-nuclear-code-quality-review": "Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth.",
   "typescript-best-practices": "TypeScript best practices.",
   "unslop": "Cut AI tells from any writing.",
+  "what-did-i-get-done": "Summarize authored commits over a user-specified time period into a concise update",
   "why": "Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds.",
 };
 
