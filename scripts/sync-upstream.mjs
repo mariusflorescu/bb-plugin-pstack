@@ -44,7 +44,6 @@ function parseBundle(path) {
   return { path, plugin, name };
 }
 
-// Upstream path -> our paths, none to drop the file. Mirrors MANIFEST.md.
 function mapPath(upstreamPath, pin) {
   const bundle = pin.bundles.find(({ path }) => upstreamPath.startsWith(path + "/"));
   if (bundle) return [`skills/${bundle.name}/` + upstreamPath.slice(bundle.path.length + 1)];
@@ -122,8 +121,6 @@ const filesUnder = (dir) =>
     entry.isDirectory() ? filesUnder(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]
   );
 
-// Changed paths in scope with both sides' modes and blobs, from git's own
-// metadata: a side is absent only when git says so.
 function upstreamChanges(from, to, scope) {
   const fields = gitBuffer("diff", "--raw", "-z", "--no-renames", "--no-abbrev", from, to, "--", ...scope)
     .toString("utf8")
@@ -136,14 +133,12 @@ function upstreamChanges(from, to, scope) {
   return changes;
 }
 
-// Both ends of the range, since a file that moves from a bundle into pstack/
-// inside it exists at only one end each.
 function checkCollisions(from, to, scope, pin) {
-  const paths = new Set(
+  const pathsAtEitherEnd = new Set(
     [from, to].flatMap((rev) => gitBuffer("ls-tree", "-r", "-z", "--name-only", rev, "--", ...scope).toString("utf8").split("\0").filter(Boolean))
   );
   const sources = new Map();
-  for (const path of [...paths].sort()) {
+  for (const path of [...pathsAtEitherEnd].sort()) {
     for (const ours of mapPath(path, pin)) {
       if (sources.has(ours)) throw new Error(`${ours} maps from both ${sources.get(ours)} and ${path}`);
       sources.set(ours, path);
