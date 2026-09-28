@@ -4,9 +4,9 @@ You are an adversarial reviewer from a different model family than the authors. 
 
 ## Sources
 
-- **Cursor's pstack, the reference.** Cursor's own repository, `https://github.com/cursor/plugins`, path `pstack/`, fetched into this repo as git objects. Read a file with `git show <UPSTREAM_SHA>:pstack/<upstream path>` and list with `git ls-tree -r --name-only <UPSTREAM_SHA> -- pstack/`. `<UPSTREAM_SHA>` is given in your scope below. Confirm provenance once with `git rev-parse --verify <UPSTREAM_SHA>^{commit}` and `git log -1 --format='%H %an %s' <UPSTREAM_SHA>`.
+- **Cursor's pstack, the reference.** Cursor's own repository, `https://github.com/cursor/plugins`, path `pstack/`, fetched into this repo as git objects. The skills this repo bundles from cursor-team-kit come from the same repository, path `cursor-team-kit/`. Read a file with `git show <UPSTREAM_SHA>:<upstream path>` and list with `git ls-tree -r --name-only <UPSTREAM_SHA> -- pstack/ cursor-team-kit/`. `<UPSTREAM_SHA>` is given in your scope below. Confirm provenance once with `git rev-parse --verify <UPSTREAM_SHA>^{commit}` and `git log -1 --format='%H %an %s' <UPSTREAM_SHA>`.
 - **This repo's port.** The working tree at `HEAD`: `skills/`, `server.ts` (the injected pstack delegation rules and the `models` setting), `BB-NATIVE.md` (the translation contract; read it first, in full).
-- **Path mapping.** `pstack/skills/<name>/` is `skills/<name>/`, except `arena`, `tdd` and `blast-radius`, which are `skills/pstack-<name>/`. `pstack/agents/comment-sicko.md` is `skills/no-comments/references/comment-sicko.md`. `pstack/agents/poteto-agent.md`, `pstack/automations/` and `pstack/.cursor-plugin/` are dropped by design. `pstack/README.md` is `UPSTREAM-README.md` (verbatim). `pstack/docs/` is `docs/`.
+- **Path mapping.** `pstack/skills/<name>/` is `skills/<name>/`, except `arena`, `tdd` and `blast-radius`, which are `skills/pstack-<name>/`. `pstack/agents/comment-sicko.md` is `skills/no-comments/references/comment-sicko.md`. `pstack/agents/poteto-agent.md`, `pstack/automations/` and `pstack/.cursor-plugin/` are dropped by design. `pstack/README.md` is `UPSTREAM-README.md` (verbatim). `pstack/docs/` is `docs/`. For each `bundle=` line in `UPSTREAM`, `cursor-team-kit/skills/<name>/` is `skills/<name>/`, and `cursor-team-kit/LICENSE` is that skill's `LICENSE`.
 - **BB itself.** `bb <cmd> --help` and `bb guide <chapter>` (`threads`, `automations`, `environments`, `agent-configuration`, `plugins`, `providers`, `browser`, `terminals`, `json`).
 
 ## What to check, for every file in scope
@@ -30,7 +30,7 @@ Compare our file with Cursor's file line by line.
 ## Rules
 
 - Read-only. No file edits, no git writes, no spawning or messaging threads, no automations, no plugin config changes.
-- Evidence or it did not happen: every finding cites our `file:line`, Cursor's text (`<UPSTREAM_SHA>:pstack/<path>:<line>`) or "new", and the `bb` help or guide text that proves a BB claim wrong.
+- Evidence or it did not happen: every finding cites our `file:line`, Cursor's text (`<UPSTREAM_SHA>:<upstream path>:<line>`) or "new", and the `bb` help or guide text that proves a BB claim wrong.
 
 ## Report (your final message)
 

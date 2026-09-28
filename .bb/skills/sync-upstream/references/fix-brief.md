@@ -4,7 +4,7 @@ A reviewer, from another model family unless its scope section says it shares yo
 
 ## Sources
 
-- Cursor's pstack: `git show <UPSTREAM_SHA>:pstack/<upstream path>` (Cursor's own commit, fetched from `https://github.com/cursor/plugins`). Path mapping: `pstack/skills/<name>/` is `skills/<name>/` except `arena`, `tdd`, `blast-radius` (`skills/pstack-<name>/`).
+- Cursor's pstack: `git show <UPSTREAM_SHA>:<upstream path>` (Cursor's own commit, fetched from `https://github.com/cursor/plugins`). Path mapping: `pstack/skills/<name>/` is `skills/<name>/` except `arena`, `tdd`, `blast-radius` (`skills/pstack-<name>/`). For each `bundle=` line in `UPSTREAM`, `cursor-team-kit/skills/<name>/` is `skills/<name>/`, and `cursor-team-kit/LICENSE` is that skill's `LICENSE`.
 - `BB-NATIVE.md` (read it first), `server.ts` (injected delegation rules), `bb <cmd> --help`, `bb guide <chapter>`.
 
 ## Rules
