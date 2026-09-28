@@ -42,7 +42,7 @@ to it as "the pstack delegation rules"; they do not restate the mapping.
 | `git show origin/main:pstack/<path>` (re-read a skill file from trunk) | `scripts/read-from-trunk.sh <path>` from poteto-mode's directory (`../poteto-mode/scripts/read-from-trunk.sh` from another skill), with `<path>` as this repo lays it out (`skills/...`). A thread keeps the skill copy BB loaded when it started; the script reads trunk of the source the plugin was installed from. A `git show origin/main:` of the project's own files stays as it is. |
 | `/goal` (a durable objective for a long program) | Kept where the root thread's provider supports it (Codex durable Goals, cleared with `bb thread clear-goal <id>`), skipped where it does not. The tick automation (`bb automation create --cron`) keeps the cadence either way. |
 | `create-skill` (Cursor built-in) | The `skill-creator` skill (BB guide plugin). |
-| `cursor-team-kit` `deslop` | The `unslop` skill for prose; for code, a de-slop or simplify skill if the session lists one, otherwise a review pass by the refactoring role. |
+| `cursor-team-kit` `deslop` | The bundled `deslop` skill (`skills/deslop/`, imported from `cursor-team-kit`; see `MANIFEST.md`) for code; the `unslop` skill for prose. |
 | `cursor-team-kit` `control-ui` / `control-cli` | The project's own verification skill if it has one (see `create-verification-skill`), otherwise BB's browser (`bb guide browser`) for web UIs and a BB terminal (`bb guide terminals`) for CLIs/TUIs. |
 | Cursor's built-in `babysit` skill | Drop the reference; the Babysit playbook stands on its own. |
 | Origin forge (`command -v origin`) | GitHub CLI (`gh`) only. |

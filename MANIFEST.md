@@ -6,6 +6,7 @@
 - Pinned commit: see `UPSTREAM` (machine-readable, bumped by `scripts/sync-upstream.mjs`). At the time of writing, `0e9af5e170fed0953e3028d0554adbabbe0027cb`, pstack `0.15.5`.
 - License: MIT, Copyright (c) 2026 Lauren Tan (`LICENSE`, retained verbatim).
 - bb packaging (`package.json`, the `server.ts` skill switches) started from `wy3z/bb-plugin-pstack` at `32f7908`. The skill text from that repo was replaced with upstream content and re-adapted.
+- `skills/deslop/` and `skills/thermo-nuclear-code-quality-review/` come from `cursor/plugins`, path `cursor-team-kit/skills/`, at commit `ecc249f1e306fc64ddf83c7bed16cacf7c2239db`. They're verbatim, since both are harness-neutral. Each directory carries cursor-team-kit's MIT `LICENSE` (Copyright (c) 2026 Cursor). The daily sync reads only `pstack/`, so it doesn't update them. Re-copy them by hand, and run `node scripts/sync-server-skills.mjs` afterwards. cursor-team-kit's `agents/thermo-nuclear-code-quality-review.md` is dropped, like every Cursor agent file. The skill runs in the thread that invokes it.
 
 ## Layout
 
