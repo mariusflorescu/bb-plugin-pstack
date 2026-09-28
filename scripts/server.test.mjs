@@ -7,16 +7,44 @@ const { default: plugin, delegationRules, POTETO_NOTES } = await import("../serv
 const PARENTS = { "claude-code": "claude-opus-5-5", codex: "gpt-6-astra" };
 
 // Every skill switch is on, as in a fresh install, except the ones named in `off`.
-async function instructions(models, { provider = "claude-code", model = PARENTS[provider], off = [], metadata = {} } = {}) {
-  const values = new Proxy({ skills: true, models }, { get: (target, key) => (key in target ? target[key] : !off.includes(key)) });
-  let configure;
+// `stored` is the thread's plugin metadata, which `threads` can replace per method.
+async function load({ models = "", off = [], stored = {}, threads = {} } = {}) {
+  const values = new Proxy({ skills: !off.includes("skills"), models }, { get: (target, key) => (key in target ? target[key] : !off.includes(key)) });
+  const seen = { reads: [], writes: [], published: [], warnings: [] };
+  const state = { stored };
+  const registered = {};
   await plugin({
     settings: { define: () => ({ get: async () => values, onChange: () => {} }) },
-    agents: { configure: (fn) => (configure = fn) },
-    log: { info: () => {} },
+    agents: { configure: (fn) => (registered.configure = fn) },
+    experimental_hooks: { on: (hook, fn) => (registered[hook] = fn) },
+    sdk: {
+      threads: {
+        getPluginMetadata: (args) => {
+          seen.reads.push(args);
+          return threads.getPluginMetadata ? threads.getPluginMetadata(args) : Promise.resolve(state.stored);
+        },
+        updatePluginMetadata: (args) => {
+          seen.writes.push(args);
+          if (threads.updatePluginMetadata) return threads.updatePluginMetadata(args);
+          state.stored = { ...state.stored, ...args.set };
+          return Promise.resolve(state.stored);
+        },
+      },
+    },
+    realtime: { publish: (channel, payload) => seen.published.push({ channel, payload }) },
+    log: { info: () => {}, warn: (message) => seen.warnings.push(message) },
   });
+  return { ...registered, seen, state };
+}
+
+async function instructions(models, { provider = "claude-code", model = PARENTS[provider], off = [], metadata = {} } = {}) {
+  const { configure } = await load({ models, off });
   return configure({ provider: { id: provider, model, capabilities: {} }, pluginMetadata: metadata }).instructions;
 }
+
+const dispatch = (bb, text) => bb["message.dispatch"]({ thread: { id: "thr_1" }, input: { text, blocks: [] } });
+
+const PROCEED = { action: "proceed" };
 
 const roleLines = (text) => text.slice(text.indexOf("Role models (provider / model @effort):\n")).split("\n").slice(1);
 
@@ -204,4 +232,85 @@ test("every provider's note stays within the 400 characters the rules leave for 
     assert.ok(note.startsWith("poteto-mode is on"), provider);
     assert.ok(note.length <= 400, `${provider}: ${note.length} characters`);
   }
+});
+
+test("a /poteto-mode line turns the mode on once, tells open chips, and proceeds", async () => {
+  const bb = await load();
+  assert.deepEqual(await dispatch(bb, "/poteto-mode\nfix the flaky test"), PROCEED);
+  assert.deepEqual(bb.state.stored, { potetoMode: "on" });
+  const { signal, ...write } = bb.seen.writes[0];
+  assert.deepEqual(write, { threadId: "thr_1", set: { potetoMode: "on" } });
+  assert.ok(signal instanceof AbortSignal);
+  assert.deepEqual(bb.seen.published, [{ channel: "poteto-mode", payload: { threadId: "thr_1" } }]);
+
+  assert.deepEqual(await dispatch(bb, "/poteto-mode\nfix the flaky test"), PROCEED);
+  assert.equal(bb.seen.reads.length, 2);
+  assert.equal(bb.seen.writes.length, 1);
+  assert.equal(bb.seen.published.length, 1);
+});
+
+test("a $poteto-mode line on any line of the message turns the mode on", async () => {
+  const bb = await load();
+  assert.deepEqual(await dispatch(bb, "fix the flaky test\n$poteto-mode"), PROCEED);
+  assert.deepEqual(bb.state.stored, { potetoMode: "on" });
+  assert.deepEqual(bb.seen.published, [{ channel: "poteto-mode", payload: { threadId: "thr_1" } }]);
+});
+
+test("a thread already on gets no write, and one that opted out is turned back on", async () => {
+  const on = await load({ stored: { potetoMode: "on" } });
+  assert.deepEqual(await dispatch(on, "/poteto-mode"), PROCEED);
+  assert.equal(on.seen.reads.length, 1);
+  assert.deepEqual(on.seen.writes, []);
+  assert.deepEqual(on.seen.published, []);
+
+  const off = await load({ stored: { potetoMode: "off" } });
+  assert.deepEqual(await dispatch(off, "/poteto-mode"), PROCEED);
+  assert.deepEqual(off.state.stored, { potetoMode: "on" });
+  assert.deepEqual(off.seen.published, [{ channel: "poteto-mode", payload: { threadId: "thr_1" } }]);
+});
+
+test("no invocation, a mid-line mention, a longer name, or a switched-off skill makes no SDK call", async () => {
+  const quiet = { reads: [], writes: [], published: [], warnings: [] };
+  for (const text of ["fix the flaky test", "try /poteto-mode later", "/poteto-modes", "$poteto-mode-lite"]) {
+    const bb = await load();
+    assert.deepEqual(await dispatch(bb, text), PROCEED);
+    assert.deepEqual(bb.seen, quiet, text);
+  }
+  for (const off of [["skills"], ["poteto-mode"]]) {
+    const bb = await load({ off });
+    assert.deepEqual(await dispatch(bb, "/poteto-mode"), PROCEED);
+    assert.deepEqual(bb.seen, quiet, off[0]);
+  }
+  const control = await load();
+  await dispatch(control, "/poteto-mode");
+  assert.equal(control.seen.reads.length, 1);
+});
+
+test("a failing metadata read logs one warning and still proceeds", async () => {
+  const bb = await load({
+    threads: {
+      getPluginMetadata: () => {
+        throw new Error("metadata store down");
+      },
+    },
+  });
+  assert.deepEqual(await dispatch(bb, "/poteto-mode"), PROCEED);
+  assert.deepEqual(bb.seen.warnings, ["poteto-mode: could not turn the mode on for thread thr_1: metadata store down"]);
+  assert.deepEqual(bb.seen.writes, []);
+  assert.deepEqual(bb.seen.published, []);
+});
+
+test("one 3-second budget covers a slow read and a hung write, and the message still proceeds", async () => {
+  const bb = await load({
+    threads: {
+      getPluginMetadata: () => new Promise((resolve) => setTimeout(() => resolve({}), 1500)),
+      updatePluginMetadata: ({ signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))),
+    },
+  });
+  const started = performance.now();
+  assert.deepEqual(await dispatch(bb, "/poteto-mode"), PROCEED);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed >= 2900 && elapsed < 3500, `${Math.round(elapsed)} ms`);
+  assert.deepEqual(bb.seen.warnings, ["poteto-mode: could not turn the mode on for thread thr_1: The operation was aborted due to timeout"]);
+  assert.deepEqual(bb.seen.published, []);
 });

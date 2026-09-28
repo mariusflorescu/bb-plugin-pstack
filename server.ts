@@ -9,7 +9,7 @@
 // Upstream: cursor/plugins pstack, MIT, (c) 2026 Lauren Tan. See README.md and
 // MANIFEST.md for the pinned commit and the adaptations applied.
 import type { BbPluginApi, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
-import { parsePotetoMode } from "./src/poteto-mode.ts";
+import { invokesPotetoMode, parsePotetoMode, POTETO_MODE_CHANNEL, type PotetoModeMetadata } from "./src/poteto-mode.ts";
 
 // Literal on purpose: a renamed or removed skill fails this plugin's selection
 // closed (bb rejects unknown names), instead of silently dropping it.
@@ -179,6 +179,10 @@ const INHERIT_PARENT = "inherit-parent";
 // BB truncates a plugin's instructions past this many characters.
 const INSTRUCTIONS_LIMIT = 4096;
 
+// One budget for the dispatch hook's metadata read and write. BB fails the
+// message past 10 s, and every other dispatch waits on this pass meanwhile.
+const POTETO_MODE_TIMEOUT_MS = 3000;
+
 function parseModels(text: string): Map<string, string[]> {
   const roles = new Map<string, string[]>();
   for (const line of text.split("\n")) {
@@ -279,6 +283,8 @@ export default async function plugin(bb: BbPluginApi) {
     current = next;
   });
 
+  const potetoModeSkillOn = () => current.skills === true && current["poteto-mode"] === true;
+
   bb.agents.configure((context) => {
     if (current.skills !== true) return { tools: [], skills: [] };
     const enabled = SKILL_NAMES.filter((name) => current[name] === true);
@@ -286,7 +292,7 @@ export default async function plugin(bb: BbPluginApi) {
       const globs = SKILL_PATHS[name];
       return globs ? [[name, globs]] : [];
     });
-    const potetoModeOn = enabled.includes("poteto-mode") && parsePotetoMode(context.pluginMetadata) === "on";
+    const potetoModeOn = potetoModeSkillOn() && parsePotetoMode(context.pluginMetadata) === "on";
     return {
       tools: [],
       skills: enabled,
@@ -298,6 +304,23 @@ export default async function plugin(bb: BbPluginApi) {
         potetoModeOn ? (POTETO_NOTES[context.provider.id] ?? POTETO_NOTE_FALLBACK) : ""
       ),
     };
+  });
+
+  // Passes re-run on drains and retries, so a thread already on gets no write.
+  bb.experimental_hooks.on("message.dispatch", async (context) => {
+    if (!potetoModeSkillOn() || !invokesPotetoMode(context.input.text)) return { action: "proceed" };
+    const threadId = context.thread.id;
+    const signal = AbortSignal.timeout(POTETO_MODE_TIMEOUT_MS);
+    try {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId, signal });
+      if (parsePotetoMode(metadata) !== "on") {
+        await bb.sdk.threads.updatePluginMetadata({ threadId, set: { potetoMode: "on" } satisfies PotetoModeMetadata, signal });
+        bb.realtime.publish(POTETO_MODE_CHANNEL, { threadId });
+      }
+    } catch (error) {
+      bb.log.warn(`poteto-mode: could not turn the mode on for thread ${threadId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return { action: "proceed" };
   });
 
   const enabled = SKILL_NAMES.filter((name) => current[name] === true).length;
