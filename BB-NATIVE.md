@@ -62,6 +62,9 @@ to it as "the pstack delegation rules"; they do not restate the mapping.
 
 ## Sync rule
 
-The daily sync reads upstream commits after the pinned SHA in `MANIFEST.md`,
-applies each changed file on top of this repo, runs this table over the changed
-lines, and opens a PR. It never merges. See `.bb/skills/sync-upstream/SKILL.md`.
+The daily sync reads the upstream commits after the pinned SHA in `UPSTREAM`
+that touch `pstack/` or a skill bundled from `cursor-team-kit`. The bundled
+skills are `deslop`, `thermo-nuclear-code-quality-review` and
+`what-did-i-get-done`, one `bundle=` line each in `UPSTREAM`. The sync applies
+each changed file on top of this repo, runs this table over the changed lines,
+and opens a PR. It never merges. See `.bb/skills/sync-upstream/SKILL.md`.

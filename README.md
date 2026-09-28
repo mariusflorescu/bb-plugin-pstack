@@ -31,7 +31,7 @@ Three skills come from Cursor's `cursor-team-kit` plugin. Upstream pstack names 
 
 ## Staying current with upstream
 
-A daily bb automation runs the project skill `.bb/skills/sync-upstream`. It 3-way merges upstream `pstack/` changes onto this repo (`scripts/sync-upstream.mjs`), translates anything Cursor-native per the contract, and opens one PR. It never merges. `UPSTREAM` holds the pinned upstream commit.
+A daily bb automation runs the project skill `.bb/skills/sync-upstream`. It 3-way merges upstream `pstack/` changes, and changes to the three skills bundled from `cursor-team-kit`, onto this repo (`scripts/sync-upstream.mjs`), translates anything Cursor-native per the contract, and opens one PR. It never merges. `UPSTREAM` holds the pinned upstream commit and one `bundle=` line per bundled skill.
 
 ## Credit
 
