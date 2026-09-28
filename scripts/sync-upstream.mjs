@@ -31,10 +31,16 @@ const gitBuffer = (...args) => execFileSync("git", args, { cwd: ROOT, maxBuffer:
 const git = (...args) => gitBuffer(...args).toString("utf8").trim();
 
 function readPin() {
-  const fields = Object.fromEntries(
-    readFileSync(PIN_FILE, "utf8").split("\n").filter(Boolean).map((line) => line.split("=", 2))
-  );
-  return { repo: fields.repo, path: fields.path, sha: fields.sha };
+  const entries = readFileSync(PIN_FILE, "utf8").split("\n").filter(Boolean).map((line) => line.split("=", 2));
+  const fields = Object.fromEntries(entries);
+  const bundles = entries.filter(([key]) => key === "bundle").map(([, value]) => parseBundle(value));
+  return { repo: fields.repo, path: fields.path, sha: fields.sha, bundles };
+}
+
+function parseBundle(path) {
+  const [plugin, skills, name, ...rest] = path.split("/");
+  if (!plugin || skills !== "skills" || !name || rest.length) throw new Error(`UPSTREAM: bundle=${path} is not <plugin>/skills/<name>`);
+  return { path, plugin, name };
 }
 
 // Upstream path -> our path, or null to drop the file. Mirrors MANIFEST.md.
@@ -227,7 +233,7 @@ function main() {
   // Deletions first, so a path that changed type is free before it is written.
   for (const { ours, result } of plan) if (result === null) write(join(ROOT, ours), null);
   for (const { ours, result } of plan) if (result) write(join(ROOT, ours), result);
-  writeFileSync(PIN_FILE, `repo=${pin.repo}\npath=${pin.path}\nsha=${to}\n`);
+  writeFileSync(PIN_FILE, readFileSync(PIN_FILE, "utf8").replace(/^sha=.*$/m, `sha=${to}`));
 
   const conflicts = plan.filter((file) => file.outcome === "conflict").map((file) => `${file.ours} (${file.reason})`);
   const lines = plan.map((file) => `${file.outcome.padEnd(9)} ${file.ours}${file.reason ? ` (${file.reason})` : ""}`);

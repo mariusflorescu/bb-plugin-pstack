@@ -49,23 +49,23 @@ function commit(root, files, prefix = "") {
   return git(root, "rev-parse", "HEAD");
 }
 
-function sync({ base, upstream, ours }) {
+function sync({ base, upstream, ours, bundles = [], prefix = "pstack/" }) {
   const dir = mkdtempSync(join(tmpdir(), "sync-upstream test with spaces-"));
   after(() => rmSync(dir, { recursive: true, force: true }));
   const up = join(dir, "upstream");
   const me = join(dir, "ours");
   mkdirSync(up);
   git(up, "init", "-q", "-b", "main");
-  const from = commit(up, base, "pstack/");
-  const to = commit(up, upstream, "pstack/");
+  const from = commit(up, base, prefix);
+  const to = commit(up, upstream, prefix);
   mkdirSync(join(me, "scripts"), { recursive: true });
   git(me, "init", "-q", "-b", "main");
   copyFileSync(SCRIPT, join(me, "scripts/sync-upstream.mjs"));
-  writeFileSync(join(me, "UPSTREAM"), `repo=${up}\npath=pstack\nsha=${from}\n`);
+  writeFileSync(join(me, "UPSTREAM"), `repo=${up}\npath=pstack\nsha=${from}\n${bundles.map((path) => `bundle=${path}\n`).join("")}`);
   commit(me, ours);
   const run = spawnSync("node", ["scripts/sync-upstream.mjs", "--to", to], { cwd: me, env: ENV, encoding: "utf8" });
   const at = (path) => join(me, path);
-  return { run, from, to, at, dir: me };
+  return { run, up, from, to, at, dir: me };
 }
 
 const mode = (abs) => (lstatSync(abs).mode & 0o777).toString(8);
@@ -203,4 +203,32 @@ test("an entry it cannot apply aborts before any write and keeps the pin", () =>
   assert.equal(readFileSync(at("skills/a/SKILL.md"), "utf8"), "one\n");
   assert.equal(readFileSync(at("UPSTREAM"), "utf8").match(/^sha=(.*)$/m)[1], from);
   assert.equal(git(dir, "status", "--porcelain"), "");
+});
+
+test("bundle= lines survive the pin bump", () => {
+  const { run, up, to, at } = sync({
+    bundles: ["cursor-team-kit/skills/deslop", "cursor-team-kit/skills/what-did-i-get-done"],
+    base: { "skills/a/SKILL.md": "one\n" },
+    upstream: { "skills/a/SKILL.md": "two\n" },
+    ours: { "skills/a/SKILL.md": "one\n" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(readFileSync(at("skills/a/SKILL.md"), "utf8"), "two\n");
+  assert.equal(
+    readFileSync(at("UPSTREAM"), "utf8"),
+    `repo=${up}\npath=pstack\nsha=${to}\nbundle=cursor-team-kit/skills/deslop\nbundle=cursor-team-kit/skills/what-did-i-get-done\n`
+  );
+});
+
+test("a bundle= line that is not <plugin>/skills/<name> aborts before any write", () => {
+  const { run, up, from, at } = sync({
+    bundles: ["cursor-team-kit/deslop"],
+    base: { "skills/a/SKILL.md": "one\n" },
+    upstream: { "skills/a/SKILL.md": "two\n" },
+    ours: { "skills/a/SKILL.md": "one\n" },
+  });
+  assert.equal(run.status, 1);
+  assert.equal(run.stderr, "error: UPSTREAM: bundle=cursor-team-kit/deslop is not <plugin>/skills/<name>\n");
+  assert.equal(readFileSync(at("skills/a/SKILL.md"), "utf8"), "one\n");
+  assert.equal(readFileSync(at("UPSTREAM"), "utf8"), `repo=${up}\npath=pstack\nsha=${from}\nbundle=cursor-team-kit/deslop\n`);
 });
