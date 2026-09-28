@@ -9,6 +9,7 @@
 // Upstream: cursor/plugins pstack, MIT, (c) 2026 Lauren Tan. See README.md and
 // MANIFEST.md for the pinned commit and the adaptations applied.
 import type { BbPluginApi, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
+import { invokesPotetoMode, parsePotetoMode, POTETO_MODE_CHANNEL, type PotetoModeMetadata } from "./src/poteto-mode.ts";
 
 // Literal on purpose: a renamed or removed skill fails this plugin's selection
 // closed (bb rejects unknown names), instead of silently dropping it.
@@ -159,11 +160,25 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
   codex: "Codex's built-in subagents",
 };
 
+// BB's Codex threads have no plan tool, so the Codex note names a checklist file instead.
+export const POTETO_NOTES: Record<string, string> = {
+  "claude-code":
+    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
+  codex:
+    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. Child briefs open with $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
+};
+
+const POTETO_NOTE_FALLBACK =
+  "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
+
 // A role whose entry is this runs on the parent thread's own provider and model.
 const INHERIT_PARENT = "inherit-parent";
 
 // BB truncates a plugin's instructions past this many characters.
 const INSTRUCTIONS_LIMIT = 4096;
+
+// BB fails the message past 10 s, and every other dispatch waits on this pass meanwhile.
+const POTETO_MODE_TIMEOUT_MS = 3000;
 
 function parseModels(text: string): Map<string, string[]> {
   const roles = new Map<string, string[]>();
@@ -196,24 +211,23 @@ const PATH_POINTER = "Before you read or edit a file, load each pstack skill who
 function rules(providerId: string, model: string, pathSection: string, roleSection: string): string {
   const nativeTool = NATIVE_SUBAGENT_TOOLS[providerId] ?? "the provider's built-in subagent tool";
   const prefix = SKILL_PREFIX[providerId] ?? "/";
-  const userOnly = `Most are user-invoked only, so they are not in your skill list${
-    prefix === "/" ? "" : `. pstack text writes /<name>; here say and run ${prefix}<name>, and ask a user who types /<name> for ${prefix}<name>`
-  }`;
+  const translate =
+    prefix === "/" ? "" : ` pstack writes /<name>: say and run ${prefix}<name>, and ask users typing /<name> for ${prefix}<name>.`;
   return `## pstack delegation rules
 
-You run on ${providerId} / ${model}. When a pstack skill says spawn, delegate, subagent, runner, reviewer, explorer or worker, that is a BB child thread:
+You run on ${providerId} / ${model}. A pstack spawn, delegate, subagent, runner, reviewer, explorer or worker is a BB child thread:
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Take provider, model and effort from the role's line below; an entry without @effort omits --reasoning-level. Never use ${nativeTool} for a pstack role: it runs the wrong model and cannot reach other providers. Panel roles spawn one child per list entry. A child that writes code in parallel with others gets --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment. Commit what it needs first: uncommitted changes do not reach a worktree. A worktree child on another machine (--machine) cannot see your local commits: push first and pass --base-branch origin/<your branch>. A read-only child says so in its brief. Spawn every child of a step before waiting on any, then collect them in one background command:
+Provider, model and effort come from the role's line below; no @effort, no --reasoning-level. Never use ${nativeTool} for a pstack role: that runs the wrong model, on your provider only. Panel roles spawn one child per entry. Parallel coding children get --new-environment worktree --base-branch "$(git rev-parse HEAD)", not --environment; commit what they need first, as worktrees miss uncommitted changes. With --machine, push and pass --base-branch origin/<your branch>: local commits stay here. A read-only child's brief says so. Spawn all of a step's children before waiting; collect them in one background command:
 
 for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
 
-A child that fails is in status error, and bb thread wait exits at once with an unreachable error instead of timing out. Read why with bb thread log <id> --format minimal. If its model or effort was rejected, pick a same-family model and a listed effort from bb provider models <provider> --environment <env> --json, where <env> is the child's .thread.environmentId in bb thread show <id> --json, not yours, respawn that seat with the same brief, and say so in your report. Otherwise check bb provider-retry status <id>. A retry listed there (overload or usage limit) restarts the child by itself: wait for it again after its time, or before handing its seat or files to another child run bb provider-retry cancel <id> and bb thread stop <id>. If none is listed, or that plugin is disabled, it is a dropout.
+A failed child is in status error; bb thread wait exits at once with an unreachable error, not a timeout. bb thread log <id> --format minimal says why. Rejected model or effort: respawn the seat, same brief, on a same-family model and listed effort from bb provider models <provider> --environment <env> --json (<env>: the child's .thread.environmentId in bb thread show <id> --json, not yours); report it. Otherwise a retry in bb provider-retry status <id> (overload or usage limit) restarts it: wait again after its time, or run bb provider-retry cancel <id> and bb thread stop <id> before reassigning its seat or files. No retry, or that plugin off: a dropout.
 
-Children report back here; follow up with bb thread tell <id>. For a cross-judge, prefer the first pool entry whose model family differs from yours; if none does, use the first entry and disclose that the judge shares your family.
+Children report here; follow up with bb thread tell <id>. A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
 
-pstack skills name each other in bold, like **unslop**. ${userOnly}. Read a named skill at ../<name>/SKILL.md from the base directory of the skill that names it. A principle named without its prefix (**prove-it-works** principle skill) is at ../principle-<name>/SKILL.md.
+pstack skills name each other in bold, like **unslop**; most are user-invoked only, so not in your skill list. Read one at ../<name>/SKILL.md from the naming skill's base directory, an unprefixed principle (**prove-it-works** principle skill) at ../principle-<name>/SKILL.md.${translate}
 
 ${pathSection}${roleSection}`;
 }
@@ -221,13 +235,14 @@ ${pathSection}${roleSection}`;
 // The block every thread receives. What does not fit whole is replaced by
 // where to read it, role models last, so BB's truncation never cuts an entry
 // in half.
-export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[]): string {
+export function delegationRules(providerId: string, model: string, setting: string, pathSkills: readonly PathSkill[], note: string): string {
   const pathSections = pathSkills.length === 0 ? [""] : [pathLines(pathSkills), PATH_POINTER];
   const roleSections = [
     `Role models (provider / model @effort):\n${roleModels(setting, `${providerId} / ${model}`)}`,
     `The role models are too long to inline here. Run bb plugin config pstack --json. values.models has one "role: provider / model @effort" line per role, and a role missing from it uses its line in schema.models.default. ${INHERIT_PARENT} means ${providerId} / ${model}.`,
   ];
-  const candidates = roleSections.flatMap((roles) => pathSections.map((paths) => rules(providerId, model, paths, roles)));
+  const lead = note === "" ? "" : `${note}\n\n`;
+  const candidates = roleSections.flatMap((roles) => pathSections.map((paths) => lead + rules(providerId, model, paths, roles)));
   return candidates.find((text) => text.length <= INSTRUCTIONS_LIMIT) ?? candidates[candidates.length - 1];
 }
 
@@ -265,6 +280,8 @@ export default async function plugin(bb: BbPluginApi) {
     current = next;
   });
 
+  const potetoModeSkillOn = () => current.skills === true && current["poteto-mode"] === true;
+
   bb.agents.configure((context) => {
     if (current.skills !== true) return { tools: [], skills: [] };
     const enabled = SKILL_NAMES.filter((name) => current[name] === true);
@@ -272,6 +289,7 @@ export default async function plugin(bb: BbPluginApi) {
       const globs = SKILL_PATHS[name];
       return globs ? [[name, globs]] : [];
     });
+    const potetoModeOn = potetoModeSkillOn() && parsePotetoMode(context.pluginMetadata) === "on";
     return {
       tools: [],
       skills: enabled,
@@ -279,9 +297,26 @@ export default async function plugin(bb: BbPluginApi) {
         context.provider.id,
         context.provider.model,
         typeof current.models === "string" ? current.models : "",
-        pathSkills
+        pathSkills,
+        potetoModeOn ? (POTETO_NOTES[context.provider.id] ?? POTETO_NOTE_FALLBACK) : ""
       ),
     };
+  });
+
+  bb.experimental_hooks.on("message.dispatch", async (context) => {
+    if (!potetoModeSkillOn() || !invokesPotetoMode(context.input.text)) return { action: "proceed" };
+    const threadId = context.thread.id;
+    const signal = AbortSignal.timeout(POTETO_MODE_TIMEOUT_MS);
+    try {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId, signal });
+      if (parsePotetoMode(metadata) !== "on") {
+        await bb.sdk.threads.updatePluginMetadata({ threadId, set: { potetoMode: "on" } satisfies PotetoModeMetadata, signal });
+        bb.realtime.publish(POTETO_MODE_CHANNEL, { threadId });
+      }
+    } catch (error) {
+      bb.log.warn(`poteto-mode: could not turn the mode on for thread ${threadId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return { action: "proceed" };
   });
 
   const enabled = SKILL_NAMES.filter((name) => current[name] === true).length;

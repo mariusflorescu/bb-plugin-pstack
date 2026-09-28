@@ -23,6 +23,13 @@ The plugin's `server.ts` injects one instruction block into every thread: the
 delegation rule and the per-role model mapping (setting `models`, edited by
 `/setup-pstack`, laid over the plugin defaults one role at a time). Skills refer
 to it as "the pstack delegation rules"; they do not restate the mapping.
+While a thread's poteto-mode is on, `server.ts` puts poteto-mode's standing
+note in front of that block. A message with a `/poteto-mode` or
+`$poteto-mode` line turns the mode on, and the chip in the thread header
+turns it off or back on. BB applies the block only when it builds the
+thread's session, at the first message or a later rebuild such as a BB
+restart, so a switch in the middle of a thread takes effect at the next
+rebuild.
 
 ## Translation table
 
@@ -49,8 +56,9 @@ to it as "the pstack delegation rules"; they do not restate the mapping.
 | Bugbot | Any review bot on the PR (Bugbot, `claude[bot]`, Copilot). |
 | Cursor hooks, `.cursor/` rules, Cursor settings UI | BB: `.bb/AGENTS.md` (project), `~/.bb/AGENTS.md` (user), `.bb/skills/`, or the plugin settings (`bb plugin config pstack ...`). |
 | Ask-the-user tool names | "ask the user" (BB routes the provider's native question tool). |
+| Cursor's to-do list ("open a todolist", todo items) | The task list that poteto-mode's standing note names. On Claude Code that is `TaskCreate` and `TaskUpdate`, and Claude 5 models get those tools only with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in BB's machine environment. BB's Codex threads have no plan tool (probed on 2026-09-28), so Codex keeps `$BB_THREAD_STORAGE/checklist.md` up to date instead. Other providers use their own task list. `server.ts` holds one note per provider in `POTETO_NOTES`. |
 | A skill named in bold (`**unslop**`), loaded by Cursor on demand | Read `../<name>/SKILL.md` from the naming skill's base directory. A principle named without its prefix (`the **prove-it-works** principle skill`) is `../principle-<name>/SKILL.md`; keep upstream's short form. Most pstack skills are user-invoked only (`disable-model-invocation`), so a provider's skill tool will not load them. The injected rules say so once, and `scripts/check-bb-native.mjs` fails on a bold skill name that resolves to neither directory. |
-| `disable-model-invocation: true` (only the user invokes the skill) | Kept in `SKILL.md`, where Claude Code reads it. Codex ignores it and reads `agents/openai.yaml` beside `SKILL.md` instead, so `scripts/sync-server-skills.mjs` writes `policy.allow_implicit_invocation: false` there for exactly these skills, and the checker fails when the two disagree. Each provider then runs a hidden skill with its own prefix: `/<name>` on Claude Code, `$<name>` on Codex. BB's composer offers both prefixes and hands Codex the text as typed; Codex resolves `$<name>` itself, hidden or not, but matches `/<name>` only against the skills it can see. So a brief that runs a skill in a child uses the child's prefix (the checker's `brief-prefix` rule). Skill text elsewhere keeps upstream's `/<name>` when it tells the user or the agent to run a skill; the rules `server.ts` injects into a Codex thread translate it: "pstack text writes /<name>; here say and run $<name>". |
+| `disable-model-invocation: true` (only the user invokes the skill) | Kept in `SKILL.md`, where Claude Code reads it. Codex ignores it and reads `agents/openai.yaml` beside `SKILL.md` instead, so `scripts/sync-server-skills.mjs` writes `policy.allow_implicit_invocation: false` there for exactly these skills, and the checker fails when the two disagree. Each provider then runs a hidden skill with its own prefix: `/<name>` on Claude Code, `$<name>` on Codex. BB's composer offers both prefixes and hands Codex the text as typed; Codex resolves `$<name>` itself, hidden or not, but matches `/<name>` only against the skills it can see. So a brief that runs a skill in a child uses the child's prefix (the checker's `brief-prefix` rule). Skill text elsewhere keeps upstream's `/<name>` when it tells the user or the agent to run a skill; the rules `server.ts` injects into a Codex thread translate it: "pstack writes /<name>: say and run $<name>". |
 | `paths:` (Cursor attaches the skill when the agent works on a matching file) | Kept in `SKILL.md` as upstream wrote it, but it is not what loads the skill: Codex ignores `paths`, and in BB threads Claude Code did not load such a skill by itself when it wrote a new `.ts` file or read one with `grep`. So `server.ts` tells every provider "Before you read or edit a file matching `<glob>`, load the `<name>` skill", from the `SKILL_PATHS` table `scripts/sync-server-skills.mjs` generates. Claude Code will not load a `disable-model-invocation` skill for the model, so a skill with `paths` drops `disable-model-invocation` (typescript-best-practices), and the checker fails on the pair. |
 
 ## Out of scope for adaptation

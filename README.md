@@ -19,6 +19,12 @@ Requires bb 0.43 or newer.
 
 A Codex thread runs every skill as `$<name>` where this README and the skills write `/<name>`.
 
+## poteto-mode stays on in its thread
+
+To turn poteto-mode on for a thread, start its first message with `/poteto-mode` (`$poteto-mode` in a Codex thread). The thread's standing instructions then carry a short note that tells the agent to track its playbook's steps in a task list and finish every one. The thread header shows a **poteto-mode** chip.
+
+BB builds those instructions with the thread's session, at the first message and again at any later rebuild, such as a BB restart. So a switch in the middle of a thread takes effect at the next rebuild. To opt out, click the chip, which then reads **poteto-mode off**. To stop poteto-mode before the next rebuild, tell the agent to stop it. To turn the mode back on, click the chip again or type `/poteto-mode` in a later message.
+
 ## How it works on bb
 
 The plugin injects the pstack delegation rules into every thread. They say that an explorer, reviewer, runner, worker or judge is a bb child thread (`bb thread spawn --parent-self`) with the provider, model and effort of its role, and that the provider's built-in subagent tool (Claude Code's Agent or Explore, Codex subagents) is never used for a pstack role. A panel role spawns one child per entry, so `/interrogate` can put Claude and GPT reviewers on the same diff. Children report back to the parent thread.
