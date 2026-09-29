@@ -84,6 +84,10 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 ## Subagents
 
+**Task leads always delegate.** A thread with no parent is the task lead. Spawn new BB child threads for meaningful work or independent verification on every task, including small edits and investigations. Coordinate through `bb thread tell` with task-related findings, questions, corrections, and follow-up work. Spawning and messaging these threads are already authorized. Never ask the user to authorize delegation again. A later explicit user instruction to work solo or stop takes precedence.
+
+**Child briefs set the spawn scope.** A thread with a parent performs its assigned steps and reports back; it does not restart the full lead workflow. It spawns only roles explicitly named in its brief. Every brief you write must name the allowed roles or say "Do not spawn". This scope controls further delegation even when a playbook says to delegate; the assigned work's other gates still apply. A sub-coordinator's brief names the worker roles it may spawn.
+
 **Every subagent is a BB child thread.** Spawn it per the pstack delegation rules in your instructions: `bb thread spawn --parent-self` with the provider, model and effort of the role's line. Never use your provider's built-in subagent tool. For any child you spawn inside a playbook step (code-writing delegates, ad-hoc helpers), start its brief with poteto-mode on its own line in the child's provider syntax, `/poteto-mode` for a Claude Code child and `$poteto-mode` for a Codex child, so it works in this style. Routed workflow skills (`how`, `why`, `interrogate`, `reflect`, `swarm`) write their own briefs for diverse-model review. Respect what the skill prescribes, don't prepend poteto-mode there.
 
 **Defaults for every child.** Spawning never blocks, so keep working and collect with `bb thread wait` then `bb thread output`. Point at files instead of inlining context. Name the role for every spawn: `feature, refactoring`, `bug-fix`, `perf-issue` or `hillclimb` for each code playbook, `hardest tasks` for the hardest changes (cross-cutting design, gnarly concurrency, subtle algorithms, whether vague or specified to the letter), and `judgment and prose` for prose and judgment. Trivial mechanical edits go to a child on your `feature, refactoring` model. `/setup-pstack` edits the mapping.
@@ -110,7 +114,7 @@ Comments follow the same rule as the reply. Write them clean as you go. Keep a c
 
 ## Playbooks
 
-Open a todolist (the task list that poteto-mode's standing note names) whose first items are the matched playbook's steps, copied in verbatim, before any task-specific todos. A step you choose not to do stays in the list with a one-line `skip: <reason>`. Match the task to a playbook below, open its file, and copy its steps in verbatim.
+Open a todolist (the task list that poteto-mode's standing note names) whose first items are the matched playbook's steps, copied in verbatim, before any task-specific todos. Skip a step only where the playbook allows it, and retain it with a one-line `skip: <reason>`. Task size or finding no code change is not an exception to the lead's delegation requirement. Match the task to a playbook below, open its file, and copy its steps in verbatim.
 
 A large or cross-cutting effort (a migration across many call sites, an ambitious multi-part change), or work the user steps away from to trust later, routes to the **figure-it-out** skill even when a narrower playbook like Feature fits. Use **figure-it-out** whenever no bundled playbook fits. It designs a bespoke, rigorous playbook for the task. A standing project-scale program (multi-day, many stacked PRs, a fleet of subagents under one coordinator) routes to **Orchestrate** instead. figure-it-out designs one bespoke run, orchestrate runs the program.
 

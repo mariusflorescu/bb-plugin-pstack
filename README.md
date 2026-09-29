@@ -29,6 +29,10 @@ BB builds those instructions with the thread's session, at the first message and
 
 The plugin injects the pstack delegation rules into every thread. They say that an explorer, reviewer, runner, worker or judge is a bb child thread (`bb thread spawn --parent-self`) with the provider, model and effort of its role, and that the provider's built-in subagent tool (Claude Code's Agent or Explore, Codex subagents) is never used for a pstack role. A panel role spawns one child per entry, so `/interrogate` can put Claude and GPT reviewers on the same diff. Children report back to the parent thread.
 
+Task leads (threads with no parent) always delegate meaningful work or independent verification to new BB child threads, including small tasks and investigations, and coordinate through `bb thread tell`. Spawning and messaging task-related threads need no further permission. Children complete their assignment and report back. Each child brief names the roles it may spawn or says "Do not spawn"; the assigned work's other gates still apply.
+
+The [BB collaboration instructions](./docs/bb-collaboration-instructions.md) preserve BB guide's introduction and replace its restrictive thread bullet with positive guidance to spawn and message task-related threads. BB guide exposes only an on/off setting for the bundled introduction, so put the customized introduction in the Custom instructions plugin, preserving any existing custom instructions, and turn off only BB guide's `introduction` setting. Keep its skills enabled. New sessions receive the updated instructions. Review the customized introduction when BB changes its CLI guidance.
+
 [BB-NATIVE.md](./BB-NATIVE.md) is the contract that maps every Cursor mechanism upstream uses to its bb equivalent. `node scripts/check-bb-native.mjs` enforces it (after `npm ci --ignore-scripts`).
 
 Three skills carry a `pstack-` prefix to avoid clashing with common personal skills: `/pstack-arena`, `/pstack-tdd` and `/pstack-blast-radius`.

@@ -23,6 +23,12 @@ The plugin's `server.ts` injects one instruction block into every thread: the
 delegation rule and the per-role model mapping (setting `models`, edited by
 `/setup-pstack`, laid over the plugin defaults one role at a time). Skills refer
 to it as "the pstack delegation rules"; they do not restate the mapping.
+Task leads (threads with no parent) always spawn new BB child threads for meaningful work or independent
+verification, including small tasks and investigations, and coordinate through
+`bb thread tell`. Both actions are authorized without further permission.
+Children execute their assigned steps and report to the parent. Each brief names
+the roles the child may spawn or says "Do not spawn". This scope controls further
+delegation even when a playbook says to delegate; other gates still apply.
 While a thread's poteto-mode is on, `server.ts` puts poteto-mode's standing
 note in front of that block. A message with a `/poteto-mode` or
 `$poteto-mode` line turns the mode on, and the chip in the thread header
