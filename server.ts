@@ -215,17 +215,17 @@ function rules(providerId: string, model: string, pathSection: string, roleSecti
     prefix === "/" ? "" : ` pstack writes /<name>: say and run ${prefix}<name>, and ask users typing /<name> for ${prefix}<name>.`;
   return `## pstack delegation rules
 
-You run on ${providerId} / ${model}. A pstack spawn, delegate, subagent, runner, reviewer, explorer or worker is a BB child thread:
+You run on ${providerId} / ${model}. Every pstack agent role is a BB child thread. Leads (no parent) always spawn new children and coordinate task-related work via bb thread tell, even for small tasks and investigations; no permission needed. Children spawn only roles named in their brief. Each brief must name those roles or say "Do not spawn"; other gates still apply.
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
-Provider, model and effort come from the role's line below; no @effort, no --reasoning-level. Never use ${nativeTool} for a pstack role: that runs the wrong model, on your provider only. Panel roles spawn one child per entry. Parallel coding children get --new-environment worktree --base-branch "$(git rev-parse HEAD)", not --environment; commit what they need first, as worktrees miss uncommitted changes. With --machine, push and pass --base-branch origin/<your branch>: local commits stay here. A read-only child's brief says so. Spawn all of a step's children before waiting; collect them in one background command:
+Use each role's provider/model. Pass @effort as --reasoning-level; omit the flag when absent. Never use ${nativeTool}. Panels spawn one child per entry. Parallel coding children use --new-environment worktree --base-branch "$(git rev-parse HEAD)" instead of --environment; commit first so their worktrees include your changes. With --machine, push and use --base-branch origin/<branch>; local commits aren't remote. Mark read-only briefs. Spawn all children before waiting; collect in one background command:
 
 for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"; done
 
-A failed child is in status error; bb thread wait exits at once with an unreachable error, not a timeout. bb thread log <id> --format minimal says why. Rejected model or effort: respawn the seat, same brief, on a same-family model and listed effort from bb provider models <provider> --environment <env> --json (<env>: the child's .thread.environmentId in bb thread show <id> --json, not yours); report it. Otherwise a retry in bb provider-retry status <id> (overload or usage limit) restarts it: wait again after its time, or run bb provider-retry cancel <id> and bb thread stop <id> before reassigning its seat or files. No retry, or that plugin off: a dropout.
+On status error, bb thread wait exits as unreachable. Read bb thread log <id> --format minimal. For rejected model/effort, reuse the brief with a same-family model and supported effort from bb provider models <provider> --environment <env> --json; use the child's .thread.environmentId from bb thread show <id> --json and report the substitution. Otherwise check bb provider-retry status <id>; wait for a scheduled retry, or run bb provider-retry cancel <id> and bb thread stop <id> before reassigning. No retry: a dropout.
 
-Children report here; follow up with bb thread tell <id>. A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
+Follow up with bb thread tell <id>. A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
 
 pstack skills name each other in bold, like **unslop**; most are user-invoked only, so not in your skill list. Read one at ../<name>/SKILL.md from the naming skill's base directory, an unprefixed principle (**prove-it-works** principle skill) at ../principle-<name>/SKILL.md.${translate}
 
