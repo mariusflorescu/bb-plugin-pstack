@@ -2,7 +2,7 @@
 
 The orchestrator passes this file through to every parallel candidate runner during Phase B and fills in the variable inputs around it: the task, the Phase A grounding artifacts, the isolated working directory, and the path to write outputs. Each runner is a BB child thread in its own managed worktree (`--new-environment worktree`), or in its own directory when the project is not a git repo. What matters is independence between candidates.
 
-You are producing one candidate design in architect's parallel exploration. Read the **architect** skill in full first. That's the workflow you're inside. Output a candidate design package: type sketch, function signatures, module map, and prose rationale shaped per [`rationale-template.md`](rationale-template.md).
+You are producing one candidate design in architect's parallel exploration. Read the **architect** skill in full first. That's the workflow you're inside. You are a leaf child. Spawn nothing and run none of its phases or skills yourself, since the orchestrator already ran Phase A. Investigate directly and return open questions to the orchestrator. Output a candidate design package: type sketch, function signatures, module map, and prose rationale shaped per [`rationale-template.md`](rationale-template.md).
 
 Apply the following discipline. The orchestrator compares candidates on these axes to pick a base.
 

@@ -15,7 +15,7 @@ bb ships each `skills/<name>/` directory into a thread and nothing else. Anythin
 | Upstream path | Here |
 |---|---|
 | `pstack/skills/<name>/` | `skills/<name>/`, except the aliases below |
-| `pstack/agents/poteto-agent.md` | Dropped. A child's brief starts with poteto-mode in the child's syntax instead: `/poteto-mode` on Claude Code, `$poteto-mode` on Codex. |
+| `pstack/agents/poteto-agent.md` | Dropped. Only a sub-coordinator child that owns a large or very-large slice gets a brief that starts with poteto-mode in the child's syntax instead: `/poteto-mode` on Claude Code, `$poteto-mode` on Codex. |
 | `pstack/agents/comment-sicko.md` | `skills/no-comments/references/comment-sicko.md` |
 | `pstack/README.md` | `UPSTREAM-README.md` (verbatim) |
 | `pstack/docs/` | `docs/`, adapted to bb (reference only, not shipped to threads) |

@@ -2,6 +2,8 @@
 
 **You own the measurement story. Plan, review, verify the numbers.** Tie every fix to a measurement, don't read source instead of measuring.
 
+Size the task first, per the size lanes in poteto-mode's Playbooks section. The lane decides which steps below run, and a step it drops stays as `skip: size <size>`.
+
 1. Capture a baseline trace via the matching control skill.
 2. `how` to ground hypotheses. Don't claim a perf ceiling without running it first.
    Most fixes come from eight strategy families. Use them as hypothesis generators, not a checklist. A family earns an attempt only when the trace shows the signal it names.
@@ -13,7 +15,7 @@
    - **Redundancy.** The wait hangs on one slow instance or attempt. Duplicate the work (replicas, hedged requests, speculative execution) and take the fastest result. The trace has to show the wait dominates and the system has headroom.
    - **Lazy evaluation.** Cost lands on results that are never used or not needed yet (eager init on the boot path, rendering offscreen items). Defer the work until first use.
    - **Scheduling.** The work must happen, but not during the interactive moment. Move it to where nobody is waiting: idle callbacks, a background warmup after boot, precompute before the user arrives, cleanup after the frame commits. The win is perceived latency, so measure the interactive path, not total work done.
-3. Plan the fix from the trace. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent on your perf-issue model, per the pstack delegation rules. Review the diff. Capture a post-fix trace.
+3. Plan the fix from the trace. If it crosses a function boundary in the large or very-large lane, or the design gate in Feature step 2 finds the shape open, `architect` first. Delegate implementation to a subagent on your perf-issue model, per the pstack delegation rules. Review the diff. Capture a post-fix trace.
    Apply the **sequence-verifiable-units** principle skill, verifying each attempt before trying the next.
 4. Parse and compare the artifacts (JSON to sqlite, diff). "Inconclusive" or wrong-surface is not a pass. Flag it.
 5. Cite the measurement in the PR.
