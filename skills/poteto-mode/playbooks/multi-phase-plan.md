@@ -4,7 +4,7 @@
 
 1. When the change is one or two files with an obvious approach, skip the plan. Say so and stop.
 2. Settle open questions by prototype before you write. Run `playbooks/prototype.md` for each. Keep the branch, the SHA, and the screenshots for Appendix A. Ask the operator only about a product or preference call that no run can settle. Give options (the **never-block-on-the-human** principle skill).
-3. Explore in subagents per the Subagents section, each brief starting with poteto-mode in the child's provider syntax, `/poteto-mode` or `$poteto-mode` (the **guard-the-context-window** principle skill). Each returns file pointers, conventions, test commands, and entry points. No inlined dumps.
+3. Explore in subagents per the Subagents section, each with a scoped read-only brief that says "Do not spawn" (the **guard-the-context-window** principle skill). Each returns file pointers, conventions, test commands, and entry points. No inlined dumps.
 4. Copy the skeleton below into the plan file and fill every placeholder. Unless the operator names a path, write the file under `$BB_THREAD_STORAGE/docs/`. Keep every heading and every sub-block in the order shown. One section per PR. One PR is one change with its own evidence (the **sequence-verifiable-units** principle skill). Name the execution playbook in **How to read this**. Pick between `playbooks/autopilot-full.md` and `playbooks/autopilot-stack.md` per the rule at the end of `playbooks/autopilot-stack.md`. A standing program takes `playbooks/orchestrate.md`.
 5. Write under `/technical-writing` in full, then `/unslop`. The body is one Diátaxis mode, how-to. Appendices hold explanation and reference. Each heading states the task or the finding. No long dashes. No mid-sentence colons.
 6. Run `node scripts/check-plan.mjs <plan.md>` from this skill's directory and fix every line it prints (the **encode-lessons-in-structure** principle skill).
@@ -68,7 +68,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Use `gh` for every PR operation. Never require `gt`.
 - [ ] Open the PR ready, never draft, per **Opening a PR**, with `gh pr create --base <base-branch>`. A stack child targets its parent branch.
 - [ ] Run the repo's lint and typecheck once before the PR-facing push. Push with hooks on.
-- [ ] Run `/deslop` before each commit and `/no-comments` before review.
+- [ ] Run `/deslop` once, on the full base-to-branch diff, when the code is ready for review. Then run `/no-comments` once on the same diff. Neither runs per commit. When a leaf child owns the PR, its parent runs them.
 - [ ] Triage every review-bot (Bugbot, Copilot, `claude[bot]`) and security-reviewer comment per the poteto-mode skill's `references/bugbot-triage.md`.
 - [ ] Rebase onto current trunk before the code-ready report and babysit. Keep that merge base in fix rounds. Rebase again only at merge prep, on a `git merge-tree` conflict with trunk, or on a CI failure that comes from a change on trunk.
 

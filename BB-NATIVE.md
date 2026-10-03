@@ -23,9 +23,10 @@ The plugin's `server.ts` injects one instruction block into every thread: the
 delegation rule and the per-role model mapping (setting `models`, edited by
 `/setup-pstack`, laid over the plugin defaults one role at a time). Skills refer
 to it as "the pstack delegation rules"; they do not restate the mapping.
-Task leads (threads with no parent) always spawn new BB child threads for meaningful work or independent
-verification, including small tasks and investigations, and coordinate through
-`bb thread tell`. Both actions are authorized without further permission.
+Task leads (threads with no parent) delegate meaningful work and independent
+verification to BB child threads and coordinate through `bb thread tell`; no
+permission needed. Trivial operations (one CLI action, a quick lookup, a
+skill's no-op branch) run in the lead.
 Children execute their assigned steps and report to the parent. Each brief names
 the roles the child may spawn or says "Do not spawn". This scope controls further
 delegation even when a playbook says to delegate; other gates still apply.
@@ -46,7 +47,7 @@ rebuild.
 | Resume / follow up a subagent | `bb thread tell <id> --message-file <path>`, only in the cases poteto-mode's "Fresh subagents by default" names (the work needs state that lives in that thread). Otherwise new work goes to a fresh child with consolidated scope (upstream rule). |
 | `readonly: true` subagent | State "read-only: do not edit files, commit or push" in the brief. Spawn into the parent's environment (default) so it reads the same tree. |
 | `environment: "cloud"`, cloud VM, cloud agent | `--new-environment worktree --base-branch "$(git rev-parse HEAD)"`. A managed worktree starts from bb's project default branch unless `--base-branch` is given; the parent's commit SHA pins it to the parent's code, so commit first. On another enrolled machine, `--machine <name> --new-environment worktree --base-branch origin/<branch>` after pushing the branch, because a local commit is not on that machine. That child cannot read the parent's absolute paths either, so attach each file it needs with `bb thread spawn --file <absolute path>` (repeatable), which uploads it. |
-| `poteto-agent` (`agents/poteto-agent.md`) | Dropped. A child that works in poteto's style gets a brief whose first line is poteto-mode in the child's provider syntax (`/poteto-mode` for Claude Code, `$poteto-mode` for Codex; see the `disable-model-invocation` row), which loads the poteto-mode skill in full, Principles index included, before the child does any work. A child's provider need not be its parent's, so each standing note in `POTETO_NOTES` gives both, for playbook helpers only: "Playbook helper briefs open with /poteto-mode, or $poteto-mode for Codex. Routed skills write their own." The routed skills (`how`, `why`, `interrogate`, `reflect`, `swarm`) keep the briefs they prescribe for diverse-model review, as Cursor's poteto-mode does. |
+| `poteto-agent` (`agents/poteto-agent.md`) | Dropped. Only a sub-coordinator child that owns a large or very-large slice gets a brief whose first line is poteto-mode in the child's provider syntax (`/poteto-mode` for Claude Code, `$poteto-mode` for Codex; see the `disable-model-invocation` row), which loads the poteto-mode skill in full, Principles index included, before the child does any work. Implementers, reviewers and helpers get a scoped brief and "Do not spawn". A child's provider need not be its parent's, so each standing note in `POTETO_NOTES` gives both prefixes: "Only large-slice sub-coordinator briefs open with /poteto-mode ($poteto-mode for Codex)." The routed skills (`how`, `why`, `interrogate`, `reflect`, `swarm`) keep the briefs they prescribe for diverse-model review, as Cursor's poteto-mode does. |
 | `comment-sicko` (`agents/comment-sicko.md`) | The persona file `no-comments/references/comment-sicko.md`. The caller pastes it verbatim at the top of the child's brief. |
 | Model slugs (`grok-*`, `gpt-*`, Cursor model names) and "default X" | The role name only ("your bug-fix model"). The mapping resolves it. |
 | `/loop`, wake-ups, polling | A background `bb thread wait` for thread events, or `bb automation create --in <duration>` / `--cron` for time-based wake-ups. |
@@ -67,6 +68,89 @@ rebuild.
 | A skill named in bold (`**unslop**`), loaded by Cursor on demand | Read `../<name>/SKILL.md` from the naming skill's base directory. A principle named without its prefix (`the **prove-it-works** principle skill`) is `../principle-<name>/SKILL.md`; keep upstream's short form. Most pstack skills are user-invoked only (`disable-model-invocation`), so a provider's skill tool will not load them. The injected rules say so once, and `scripts/check-bb-native.mjs` fails on a bold skill name that resolves to neither directory. |
 | `disable-model-invocation: true` (only the user invokes the skill) | Kept in `SKILL.md`, where Claude Code reads it. Codex ignores it and reads `agents/openai.yaml` beside `SKILL.md` instead, so `scripts/sync-server-skills.mjs` writes `policy.allow_implicit_invocation: false` there for exactly these skills, and the checker fails when the two disagree. Each provider then runs a hidden skill with its own prefix: `/<name>` on Claude Code, `$<name>` on Codex. BB's composer offers both prefixes and hands Codex the text as typed; Codex resolves `$<name>` itself, hidden or not, but matches `/<name>` only against the skills it can see. So a brief that runs a skill in a child uses the child's prefix (the checker's `brief-prefix` rule). Skill text elsewhere keeps upstream's `/<name>` when it tells the user or the agent to run a skill; the rules `server.ts` injects into a Codex thread translate it: "pstack writes /<name>: say and run $<name>". |
 | `paths:` (Cursor attaches the skill when the agent works on a matching file) | Kept in `SKILL.md` as upstream wrote it, but it is not what loads the skill: Codex ignores `paths`, and in BB threads Claude Code did not load such a skill by itself when it wrote a new `.ts` file or read one with `grep`. So `server.ts` tells every provider "Before you read or edit a file matching `<glob>`, load the `<name>` skill", from the `SKILL_PATHS` table `scripts/sync-server-skills.mjs` generates. Claude Code will not load a `disable-model-invocation` skill for the model, so a skill with `paths` drops `disable-model-invocation` (typescript-best-practices), and the checker fails on the pair. |
+
+## Local policy for sizing and delegation
+
+These rules are BB-local policy, not translations. They right-size poteto-mode
+after an audit of 47 threads found the full ritual on every ticket. When an
+upstream change touches one of these lines, keep the rule and bring in the rest
+of the change.
+
+1. **Size first.** poteto-mode's Playbooks section opens every task with the
+   todo `size: <trivial|small|medium|large|very-large>, <one-line reason>`.
+   Trivial runs in the lead. Security, auth, tenant-isolation and data-safety
+   work is never trivial, including an already-fixed or no-repro outcome, and
+   sits in the small lane at minimum. Small is one implementer and one
+   reviewer from another model family, with no how, architect, pstack-arena
+   or interrogate. Medium adds how on its simple path. Large and very-large
+   run the full playbook. A read-only investigation has its own form of each
+   lane. Small is one how explainer child with no implementer and no PR.
+   Medium runs how on the path that skill picks, also with no PR. Either way
+   the report persists per rule 8. A step a lane drops stays as
+   `skip: size <size>`. From the small lane up, a no-repro or no-code-change
+   result does not skip a delegated investigation. The Feature, Bug fix,
+   Refactoring, Perf issue and Investigation playbooks point at the lanes.
+   Architect and interrogate apply only in the large lanes or when rule 2's
+   gate finds the shape open. That covers poteto-mode's Non-negotiables, the
+   architect step in Bug fix, Perf issue and Refactoring, Feature step 7, and
+   the subagent rule in Opening a PR.
+2. **Design gate.** Feature step 2 (architect) and step 4 (pstack-arena) run
+   only when the implementation admits materially different shapes and the
+   shape is not already decided. A shape the user or the PO agreed on records
+   `skip: shape decided by <source>`. When that is unclear, the lead asks one
+   short question. Whether a shape is agreed is a preference call, so the
+   question passes "classify it before you ask". Runner counts and the role
+   mapping stay as they are. Architect Phase B carries the same gate and the
+   same question.
+3. **Child briefs.** Only a sub-coordinator that owns a large or very-large
+   slice gets poteto-mode as its brief's first line, and it writes its own
+   size line. Implementers, reviewers and helpers get a scoped brief that
+   carries the files, the data shape, the size and the success criteria, plus
+   "Do not spawn". Only a large-slice sub-coordinator whose brief names worker
+   roles fans out. An Autopilot owner is one by its playbook. Every other child
+   is a leaf. It investigates directly,
+   spawns nothing (Comment Sicko included), and returns open questions to its
+   parent. A child never hands its own work to another child of the same
+   role. A routed skill (`how`, `why`, `interrogate`, `reflect`, `swarm`)
+   writes its own children's briefs, as upstream says, and none of those
+   children is a large-slice sub-coordinator.
+4. **One delegation rule.** "Task leads delegate meaningful work and
+   independent verification to BB child threads and coordinate through
+   `bb thread tell`; no permission needed. Trivial operations (one CLI action,
+   a quick lookup, a skill's no-op branch) run in the lead." The same text
+   appears in `server.ts`, poteto-mode's Subagents section, `README.md`, this
+   file and `docs/bb-collaboration-instructions.md`. `bb thread tell` carries
+   findings, questions and corrections. When new work, a follow-up included,
+   goes to a child, it goes to a fresh one, per upstream's "Fresh subagents by
+   default" in poteto-mode's Subagents section.
+5. **Gates once per PR.** One deslop pass and one no-comments pass run once,
+   on the full base-to-branch diff, when the code is ready for review. That
+   covers a PR opened at the end and one already open, as in the Autopilot
+   playbooks. They never run per delegated diff or per commit. A partial
+   cleanup a caller asks for explicitly is allowed but does not count as the
+   gate. When a leaf child owns the PR, its parent (the lead or the large-slice
+   sub-coordinator that spawned it) runs the gate and passes the result back.
+   Only a sub-coordinator whose brief names worker roles runs it through its
+   own children. A comment that states an invariant, a constraint or a non-obvious
+   why stays, whoever wrote the code. poteto-mode's Comments section, the
+   no-comments skill and Comment Sicko all hold that rule.
+6. **Premise first.** Bug fix checks a `cause confirmed: <runtime evidence>`
+   todo before any architect or implementation child. Feature records
+   `owner: <answer>` from how before architect. Investigation and swarm state
+   the underlying goal in one line before an open-ended fan-out, and ask one
+   question when the request does not say why.
+7. **Size every follow-up.** Each new user request in a poteto-mode thread
+   gets its own size line. A follow-up tweak whose shape the user or the PO
+   already decided is small at most. A decided shape on a new request skips
+   the design bakeoff through rule 2's gate, not through this cap.
+8. **Reports persist.** An architect request that says no code, or whose
+   deliverable is a report or roadmap, stops after Phase B's synthesis and
+   marks Phase D `skip: report-only`. A report goes to
+   `$BB_THREAD_STORAGE/<slug>/` or a docs PR, never only to a managed
+   worktree, which BB destroys when the thread is archived.
+
+`server.ts`'s standing notes carry rules 1, 3, 5 and 7 in short form, inside
+the 4096-character block.
 
 ## Out of scope for adaptation
 

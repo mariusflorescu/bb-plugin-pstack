@@ -76,6 +76,6 @@ You might be wondering whether every change needs this. No. Most changes need no
 - A coverage matrix, set of parallel checks, or race with declared arms is `/swarm`.
 - A contested design that's expensive to reverse gets `/architect`, then `/interrogate` before shipping.
 
-`/poteto-mode` already applies this ladder. Boundary-crossing work triggers `/architect` on its own, so you reach for these directly mainly when you want more or less scrutiny than the default.
+`/poteto-mode` already applies this ladder. It sizes each request first. Boundary-crossing work in a large lane, or a design whose shape is still open, triggers `/architect` on its own, and a shape you already agreed on skips the bakeoff. So you reach for these directly mainly when you want more or less scrutiny than the default.
 
 Next: [Build and clean the change](./05-build-and-clean.md).

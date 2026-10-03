@@ -165,16 +165,16 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
 };
 
 // A child's provider need not be the parent's, so every note gives both prefixes (SKILL_PREFIX).
-// Routed skills (how, why, interrogate, reflect, swarm) prescribe their own briefs, so the prefix is for playbook helpers only.
-const CHILD_BRIEF = "Playbook helper briefs open with /poteto-mode, or $poteto-mode for Codex. Routed skills write their own.";
+// A routed skill's child is never a large-slice sub-coordinator, so it keeps the brief that skill writes.
+const CHILD_BRIEF = "Only large-slice sub-coordinator briefs open with /poteto-mode ($poteto-mode for Codex).";
 
 // BB's Codex threads have no plan tool, so the Codex note names a checklist file instead.
 export const POTETO_NOTES: Record<string, string> = {
-  "claude-code": `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`,
-  codex: `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. ${CHILD_BRIEF} Open a PR if the playbook does. Report progress freely; claim done only when every step is.`,
+  "claude-code": `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`,
+  codex: `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop and no-comments once per PR. Briefs narrow scope, never gates. ${CHILD_BRIEF} Open a PR if the playbook does. Report progress freely; claim done only when every step is.`,
 };
 
-const POTETO_NOTE_FALLBACK = `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`;
+const POTETO_NOTE_FALLBACK = `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`;
 
 // A role whose entry is this runs on the parent thread's own provider and model.
 const INHERIT_PARENT = "inherit-parent";
@@ -220,7 +220,7 @@ function rules(providerId: string, model: string, pathSection: string, roleSecti
     prefix === "/" ? "" : ` pstack writes /<name>: say and run ${prefix}<name>, and ask users typing /<name> for ${prefix}<name>.`;
   return `## pstack delegation rules
 
-You run on ${providerId} / ${model}. Every pstack agent role is a BB child thread. Leads (no parent) always spawn new children and coordinate task-related work via bb thread tell, even for small tasks and investigations; no permission needed. Children spawn only roles named in their brief. Each brief must name those roles or say "Do not spawn"; other gates still apply.
+You run on ${providerId} / ${model}. Every pstack agent role is a BB child thread. Task leads delegate meaningful work and independent verification to BB child threads and coordinate through bb thread tell; no permission needed. Trivial operations (one CLI action, a quick lookup, a skill's no-op branch) run in the lead. Children spawn only roles named in their brief. Each brief must name those roles or say "Do not spawn"; other gates still apply.
 
 bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <provider> --model <model> --reasoning-level <effort> --title "<role>: <slice>" --prompt-file <brief>
 
@@ -230,7 +230,7 @@ for id in <ids>; do bb thread wait "$id" --timeout 30m && bb thread output "$id"
 
 On status error, bb thread wait exits as unreachable. Read bb thread log <id> --format minimal. For rejected model/effort, reuse the brief with a same-family model and supported effort from bb provider models <provider> --environment <env> --json; use the child's .thread.environmentId from bb thread show <id> --json and report the substitution. Otherwise check bb provider-retry status <id>; wait for a scheduled retry, or run bb provider-retry cancel <id> and bb thread stop <id> before reassigning. No retry: a dropout.
 
-Follow up with bb thread tell <id>. A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
+A cross-judge is the first pool entry outside your model family, else the first, flagged same-family.
 
 pstack skills name each other in bold, like **unslop**; most are user-invoked only, so not in your skill list. Read one at ../<name>/SKILL.md from the naming skill's base directory, an unprefixed principle (**prove-it-works** principle skill) at ../principle-<name>/SKILL.md.${translate}
 
