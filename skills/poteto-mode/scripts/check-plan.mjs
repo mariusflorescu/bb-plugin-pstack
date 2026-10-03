@@ -17,7 +17,8 @@ const SUB_BLOCKS = [
 	"Merge.",
 ];
 const PROGRAM_H3 = ["Arm the program", "Spawn owners", "PR mechanics", "Verdict and merge", "Boot recipe"];
-const PROGRAM_MARKERS = ["/goal", "read-from-trunk.sh", /30[- ]minute/, "status message"];
+const PROGRAM_MARKERS = ["read-from-trunk.sh", "status message"];
+const HOURLY_CRON = /--cron (['"])0 \* \* \* \*\1/;
 const HOW_TO_READ_MARKERS = [
 	"One box is one unit of work",
 	"names the evidence",
@@ -94,9 +95,9 @@ else {
 		else cursor = at + 1;
 	}
 	for (const marker of PROGRAM_MARKERS) {
-		const ok = marker instanceof RegExp ? marker.test(bodyText(program)) : bodyText(program).includes(marker);
-		if (!ok) fail(program.n, `Program checklist lacks "${marker}"`);
+		if (!bodyText(program).includes(marker)) fail(program.n, `Program checklist lacks "${marker}"`);
 	}
+	if (!HOURLY_CRON.test(bodyText(program))) fail(program.n, `Program checklist lacks the hourly tick "--cron '0 * * * *'", in single or double quotes`);
 }
 
 const close = find("Close the program");

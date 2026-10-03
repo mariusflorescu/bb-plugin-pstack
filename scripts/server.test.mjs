@@ -53,15 +53,17 @@ const RULES = "## pstack delegation rules\n\n";
 
 const ON = { potetoMode: "on" };
 
+const CHILD_BRIEF = "Only large-slice sub-coordinator briefs open with /poteto-mode ($poteto-mode for Codex).";
+
 const NOTES = {
-  "claude-code":
-    "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. Only large-slice sub-coordinators get /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
-  codex:
-    "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop and no-comments once per PR. Briefs narrow scope, never gates. Only large-slice sub-coordinators get $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
+  "claude-code": `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`,
+  codex: `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop and no-comments once per PR. Briefs narrow scope, never gates. ${CHILD_BRIEF} Open a PR if the playbook does. Report progress freely; claim done only when every step is.`,
 };
 
-const FALLBACK_NOTE =
-  "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. Only large-slice sub-coordinators get /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
+const FALLBACK_NOTE = `poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`;
+
+// The most characters a note may take and still leave the default mapping and the paths line inline.
+const NOTE_BUDGET = 438;
 
 const OWNER_MODELS = `feature, refactoring: claude-code / claude-opus-5-5 @xhigh
 bug-fix: claude-code / claude-fable-5-1 @xhigh
@@ -197,8 +199,8 @@ test("with the real note, the owner's setting keeps the role models and the path
   }
 });
 
-test("a 400-character note fits with the owner's setting, the role models and the paths line", () => {
-  const note = "n".repeat(400);
+test("a note of the full budget fits with the owner's setting, the role models and the paths line", () => {
+  const note = "n".repeat(NOTE_BUDGET);
   for (const [provider, model] of Object.entries(PARENTS)) {
     const text = delegationRules(provider, model, OWNER_MODELS, TS_SKILL, note);
     assert.ok(text.startsWith(`${note}\n\n${RULES}`), provider);
@@ -223,12 +225,24 @@ test("a mapping that fits alone but not beside the note gives way to where to re
   }
 });
 
-test("every provider's note stays within the 400 characters the rules leave for it", async () => {
+test("every provider's note stays within the characters the rules leave for it", async () => {
   for (const provider of [...Object.keys(POTETO_NOTES), "pi"]) {
     const text = await instructions("", { provider, model: "any-model", metadata: ON });
     const note = text.slice(0, text.indexOf(`\n\n${RULES}`));
     assert.ok(note.startsWith("poteto-mode is on"), provider);
-    assert.ok(note.length <= 400, `${provider}: ${note.length} characters`);
+    assert.ok(note.length <= NOTE_BUDGET, `${provider}: ${note.length} characters`);
+  }
+});
+
+test("every parent's note gives either child provider's brief prefix, for large-slice sub-coordinators only", async () => {
+  for (const [provider, model] of [...Object.entries(PARENTS), ["pi", "pi-1"]]) {
+    const text = await instructions("", { provider, model, metadata: ON });
+    const note = text.slice(0, text.indexOf(`\n\n${RULES}`));
+    const sentence = note.match(/[^.]* briefs open with [^.]*\./)?.[0].trim();
+    assert.equal(sentence, CHILD_BRIEF, provider);
+    assert.match(sentence, /^Only large-slice sub-coordinator briefs open with \/poteto-mode \(\$poteto-mode for Codex\)\.$/, provider);
+    assert.equal(note.includes("Child briefs open with"), false, provider);
+    assert.equal(note.includes("Playbook helper briefs"), false, provider);
   }
 });
 

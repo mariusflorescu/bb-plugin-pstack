@@ -44,10 +44,10 @@ rebuild.
 |---|---|
 | `Task` tool, "spawn a subagent", `subagent_type`, "delegate" | A child thread: `bb thread spawn --project "$BB_PROJECT_ID" --parent-self --environment "$BB_ENVIRONMENT_ID" --provider <p> --model <m> --reasoning-level <e> --title "<role>: <slice>" --prompt-file <brief>`. A child that writes code in parallel with others takes `--new-environment worktree --base-branch "$(git rev-parse HEAD)"` instead of `--environment`, and the parent commits what that child needs first, because uncommitted changes do not reach a worktree. Provider, model and effort come from the role's entry in the pstack delegation rules. Never the provider's built-in subagent tool (Claude Code `Agent`/`Explore`/`Task`, Codex subagents). |
 | `run_in_background: true`, "fire and wait" | Spawning never blocks. Children report their turns to the parent. Collect with `bb thread wait <id>` then `bb thread output <id>`; wait on N children in one background command. |
-| Resume / follow up a subagent | `bb thread tell <id> --message-file <path>`. A fresh child with consolidated scope is still preferred over resuming (upstream rule). |
+| Resume / follow up a subagent | `bb thread tell <id> --message-file <path>`, only in the cases poteto-mode's "Fresh subagents by default" names (the work needs state that lives in that thread). Otherwise new work goes to a fresh child with consolidated scope (upstream rule). |
 | `readonly: true` subagent | State "read-only: do not edit files, commit or push" in the brief. Spawn into the parent's environment (default) so it reads the same tree. |
 | `environment: "cloud"`, cloud VM, cloud agent | `--new-environment worktree --base-branch "$(git rev-parse HEAD)"`. A managed worktree starts from bb's project default branch unless `--base-branch` is given; the parent's commit SHA pins it to the parent's code, so commit first. On another enrolled machine, `--machine <name> --new-environment worktree --base-branch origin/<branch>` after pushing the branch, because a local commit is not on that machine. That child cannot read the parent's absolute paths either, so attach each file it needs with `bb thread spawn --file <absolute path>` (repeatable), which uploads it. |
-| `poteto-agent` (`agents/poteto-agent.md`) | Dropped. Only a sub-coordinator child that owns a large or very-large slice gets a brief whose first line is poteto-mode in the child's provider syntax (`/poteto-mode` for Claude Code, `$poteto-mode` for Codex; see the `disable-model-invocation` row), which loads the poteto-mode skill in full, Principles index included, before the child does any work. Implementers, reviewers and helpers get a scoped brief and "Do not spawn". |
+| `poteto-agent` (`agents/poteto-agent.md`) | Dropped. Only a sub-coordinator child that owns a large or very-large slice gets a brief whose first line is poteto-mode in the child's provider syntax (`/poteto-mode` for Claude Code, `$poteto-mode` for Codex; see the `disable-model-invocation` row), which loads the poteto-mode skill in full, Principles index included, before the child does any work. Implementers, reviewers and helpers get a scoped brief and "Do not spawn". A child's provider need not be its parent's, so each standing note in `POTETO_NOTES` gives both prefixes: "Only large-slice sub-coordinator briefs open with /poteto-mode ($poteto-mode for Codex)." The routed skills (`how`, `why`, `interrogate`, `reflect`, `swarm`) keep the briefs they prescribe for diverse-model review, as Cursor's poteto-mode does. |
 | `comment-sicko` (`agents/comment-sicko.md`) | The persona file `no-comments/references/comment-sicko.md`. The caller pastes it verbatim at the top of the child's brief. |
 | Model slugs (`grok-*`, `gpt-*`, Cursor model names) and "default X" | The role name only ("your bug-fix model"). The mapping resolves it. |
 | `/loop`, wake-ups, polling | A background `bb thread wait` for thread events, or `bb automation create --in <duration>` / `--cron` for time-based wake-ups. |
@@ -60,6 +60,7 @@ rebuild.
 | `cursor-team-kit` `control-ui` / `control-cli` | The project's own verification skill if it has one (see `create-verification-skill`), otherwise BB's browser (`bb guide browser`) for web UIs and a BB terminal (`bb guide terminals`) for CLIs/TUIs. |
 | Cursor's built-in `babysit` skill | Drop the reference; the Babysit playbook stands on its own. |
 | Origin forge (`command -v origin`) | GitHub CLI (`gh`) only. |
+| A run's built-in PR tool (create, edit, retarget and mark ready through it, `draft: false`) | Dropped. BB threads have no tool that opens a PR, and BB reads the PR of an environment's branch however it was opened (`bb thread show`), so `gh` covers every PR operation. The checker's `pr-tool` rule fails on the phrase in instruction prose; a `draft: false` property in a script is code, not an instruction, and is exempt. |
 | Bugbot | Any review bot on the PR (Bugbot, `claude[bot]`, Copilot). |
 | Cursor hooks, `.cursor/` rules, Cursor settings UI | BB: `.bb/AGENTS.md` (project), `~/.bb/AGENTS.md` (user), `.bb/skills/`, or the plugin settings (`bb plugin config pstack ...`). |
 | Ask-the-user tool names | "ask the user" (BB routes the provider's native question tool). |
@@ -110,13 +111,18 @@ of the change.
    is a leaf. It investigates directly,
    spawns nothing (Comment Sicko included), and returns open questions to its
    parent. A child never hands its own work to another child of the same
-   role.
+   role. A routed skill (`how`, `why`, `interrogate`, `reflect`, `swarm`)
+   writes its own children's briefs, as upstream says, and none of those
+   children is a large-slice sub-coordinator.
 4. **One delegation rule.** "Task leads delegate meaningful work and
    independent verification to BB child threads and coordinate through
    `bb thread tell`; no permission needed. Trivial operations (one CLI action,
    a quick lookup, a skill's no-op branch) run in the lead." The same text
    appears in `server.ts`, poteto-mode's Subagents section, `README.md`, this
-   file and `docs/bb-collaboration-instructions.md`.
+   file and `docs/bb-collaboration-instructions.md`. `bb thread tell` carries
+   findings, questions and corrections. When new work, a follow-up included,
+   goes to a child, it goes to a fresh one, per upstream's "Fresh subagents by
+   default" in poteto-mode's Subagents section.
 5. **Gates once per PR.** One deslop pass and one no-comments pass run once,
    on the full base-to-branch diff, when the code is ready for review. That
    covers a PR opened at the end and one already open, as in the Autopilot
