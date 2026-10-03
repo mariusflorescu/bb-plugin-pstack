@@ -24,6 +24,7 @@ const RULES = [
   { id: "team-kit", re: /cursor-team-kit|\bcontrol-(ui|cli)\b|\bcreate-skill\b/, hint: "use the project's verification skill, bb browser/terminals, skill-creator" },
   { id: "transcripts", re: /agent-transcripts/, hint: "use bb thread log / bb thread output" },
   { id: "origin-forge", re: /\bOrigin\b|`origin pr|origin pr (create|view|merge|edit|ready|checks|thread)|command -v origin/, hint: "gh is the only forge" },
+  { id: "pr-tool", re: /\bPR tool\b|\bdraft: false\b/, hint: "BB has no PR-creating tool; gh covers every PR operation" },
   { id: "loop-cmd", re: /(^|[\s`(])\/loop\b/, hint: "background bb thread wait, or bb automation create" },
   { id: "cloud-agent", re: /cloud[- ](agent|VM|root|sleeper)|environment: "cloud"|Cursor dashboard/i, hint: "--new-environment worktree or --machine" },
   { id: "cursor-rules", re: /\.mdc\b|alwaysApply|always-applied rule/, hint: "bb config is the plugin setting, .bb/AGENTS.md or .bb/skills" },

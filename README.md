@@ -1,6 +1,6 @@
 # pstack for bb
 
-pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin ships it to bb as 50 skills, adapted so every delegation runs as a bb child thread on the model you picked for that role.
+pstack is an engineering skill library for coding agents. Lauren Tan ([poteto](https://x.com/poteto)) wrote it for Cursor. This plugin ships it to bb as 52 skills, adapted so every delegation runs as a bb child thread on the model you picked for that role.
 
 ## Install
 

@@ -92,6 +92,34 @@ test("BB CLI usage the contract rules out is flagged", () => {
   );
 });
 
+test("a run's built-in PR tool is flagged, a draft field in code is not", () => {
+  const run = check({
+    "server.ts": 'const SKILL_NAMES = [\n  "a",\n] as const;\n',
+    "skills/a/SKILL.md": [
+      "---",
+      "name: a",
+      "description: x",
+      "---",
+      "Open it with `gh pr create --base main`, never `--draft`.",
+      "When the run provides a built-in PR tool, create the PR through it.",
+      "Set `draft: false` on every creation call.",
+      "",
+    ].join("\n"),
+    "skills/a/scripts/policy.test.ts": "const policy = { allowDraft: false, isDraft: false };\n",
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(
+    run.stdout,
+    [
+      "a/SKILL.md:6 [pr-tool] BB has no PR-creating tool; gh covers every PR operation: When the run provides a built-in PR tool, create the PR through it.",
+      "a/SKILL.md:7 [pr-tool] BB has no PR-creating tool; gh covers every PR operation: Set `draft: false` on every creation call.",
+      "",
+      "0/1 skills clean, 2 findings",
+      "",
+    ].join("\n")
+  );
+});
+
 test("a skill's failure paragraph must run the provider-retry check, a script need not", () => {
   const run = check({
     "server.ts": 'const SKILL_NAMES = [\n  "a",\n] as const;\n',

@@ -1,6 +1,6 @@
 repo=https://github.com/cursor/plugins.git
 path=pstack
-sha=0e9af5e170fed0953e3028d0554adbabbe0027cb
+sha=23e4138daa01c42d4969f7a5465f82704e64f798
 bundle=cursor-team-kit/skills/deslop
 bundle=cursor-team-kit/skills/thermo-nuclear-code-quality-review
 bundle=cursor-team-kit/skills/what-did-i-get-done
