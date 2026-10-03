@@ -48,9 +48,10 @@ const RULES = [
 ];
 
 const TEXT = new Set([".md", ".sh", ".mjs", ".ts", ".json", ".txt", ""]);
-// Code files may legitimately say "cursor" (pagination) or talk to GitHub bots,
-// and the failure paragraph a skill tells the agent to follow is prose.
-const CODE_EXEMPT = new Set(["cursor-name", "origin-forge", "task-tool", "retry-check"]);
+// Code files may legitimately say "cursor" (pagination), talk to GitHub bots or
+// set a `draft: false` property, and the failure paragraph a skill tells the
+// agent to follow is prose.
+const CODE_EXEMPT = new Set(["cursor-name", "origin-forge", "task-tool", "retry-check", "pr-tool"]);
 
 // A bold name is a skill reference when it carries a pstack prefix or the text
 // calls it a skill ("the **how** skill", "**a** and **b** principle skills").

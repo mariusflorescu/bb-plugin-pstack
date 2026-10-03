@@ -105,7 +105,8 @@ test("a run's built-in PR tool is flagged, a draft field in code is not", () => 
       "Set `draft: false` on every creation call.",
       "",
     ].join("\n"),
-    "skills/a/scripts/policy.test.ts": "const policy = { allowDraft: false, isDraft: false };\n",
+    "skills/a/scripts/policy.ts": "const policy = { draft: false };\n",
+    "skills/a/scripts/policy.mjs": "// a run's PR tool\nexport const options = { draft: false };\n",
   });
   assert.equal(run.status, 1, run.stderr);
   assert.equal(

@@ -164,16 +164,16 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
   codex: "Codex's built-in subagents",
 };
 
+// A child's provider need not be the parent's, so every note gives both prefixes (SKILL_PREFIX).
+const CHILD_BRIEF = "Child briefs open with /poteto-mode, or $poteto-mode for a Codex child.";
+
 // BB's Codex threads have no plan tool, so the Codex note names a checklist file instead.
 export const POTETO_NOTES: Record<string, string> = {
-  "claude-code":
-    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
-  codex:
-    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. Child briefs open with $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
+  "claude-code": `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`,
+  codex: `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. ${CHILD_BRIEF} Open a PR if the playbook does. Report progress freely; claim done only when every step is.`,
 };
 
-const POTETO_NOTE_FALLBACK =
-  "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
+const POTETO_NOTE_FALLBACK = `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`;
 
 // A role whose entry is this runs on the parent thread's own provider and model.
 const INHERIT_PARENT = "inherit-parent";
