@@ -165,7 +165,8 @@ const NATIVE_SUBAGENT_TOOLS: Record<string, string> = {
 };
 
 // A child's provider need not be the parent's, so every note gives both prefixes (SKILL_PREFIX).
-const CHILD_BRIEF = "Child briefs open with /poteto-mode, or $poteto-mode for a Codex child.";
+// Routed skills (how, why, interrogate, reflect, swarm) prescribe their own briefs, so the prefix is for playbook helpers only.
+const CHILD_BRIEF = "Playbook helper briefs open with /poteto-mode, or $poteto-mode for Codex. Routed skills write their own.";
 
 // BB's Codex threads have no plan tool, so the Codex note names a checklist file instead.
 export const POTETO_NOTES: Record<string, string> = {

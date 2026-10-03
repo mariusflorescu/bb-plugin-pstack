@@ -53,7 +53,7 @@ const RULES = "## pstack delegation rules\n\n";
 
 const ON = { potetoMode: "on" };
 
-const CHILD_BRIEF = "Child briefs open with /poteto-mode, or $poteto-mode for a Codex child.";
+const CHILD_BRIEF = "Playbook helper briefs open with /poteto-mode, or $poteto-mode for Codex. Routed skills write their own.";
 
 const NOTES = {
   "claude-code": `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`,
@@ -63,7 +63,7 @@ const NOTES = {
 const FALLBACK_NOTE = `poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. ${CHILD_BRIEF} If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.`;
 
 // The most characters a note may take and still leave the default mapping and the paths line inline.
-const NOTE_BUDGET = 440;
+const NOTE_BUDGET = 470;
 
 const OWNER_MODELS = `feature, refactoring: claude-code / claude-opus-5-5 @xhigh
 bug-fix: claude-code / claude-fable-5-1 @xhigh
@@ -234,14 +234,16 @@ test("every provider's note stays within the characters the rules leave for it",
   }
 });
 
-test("every parent's note gives the brief prefix of either child provider, not only its own", async () => {
+test("every parent's note gives the brief prefix of either child provider, and leaves routed skills their own briefs", async () => {
   for (const [provider, model] of [...Object.entries(PARENTS), ["pi", "pi-1"]]) {
     const text = await instructions("", { provider, model, metadata: ON });
     const note = text.slice(0, text.indexOf(`\n\n${RULES}`));
-    const sentence = note.match(/Child briefs open with [^.]*\./)?.[0];
+    const sentence = note.match(/Playbook helper briefs open with [^.]*\. Routed skills write their own\./)?.[0];
     assert.equal(sentence, CHILD_BRIEF, provider);
-    assert.match(sentence, /with \/poteto-mode, or \$poteto-mode for a Codex child\./, provider);
+    assert.match(sentence, /^Playbook helper briefs open with \/poteto-mode, or \$poteto-mode for Codex\./, provider);
+    assert.match(sentence, /Routed skills write their own\.$/, provider);
     assert.equal(note.includes("open with $poteto-mode."), false, provider);
+    assert.equal(note.includes("Child briefs open with"), false, provider);
   }
 });
 
