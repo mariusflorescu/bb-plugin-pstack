@@ -46,9 +46,9 @@ In context, that's enough. [`/pstack-tdd`](../../skills/pstack-tdd/SKILL.md) wri
 
 [`typescript-best-practices`](../../skills/typescript-best-practices/SKILL.md) has no step in your workflow. Its description tells the agent to use it when reading or editing a `.ts` or `.tsx` file, and the agent loads it on its own when it judges the description fits. No file path triggers it, so when the rules must apply, put `/typescript-best-practices` in your prompt. It turns the type-system principles into concrete rules: discriminated unions, `unknown` at boundaries, exhaustive variants, schema-derived types.
 
-## Clean before you commit
+## Clean when the code is ready for review
 
-The [Opening a PR playbook](../../skills/poteto-mode/playbooks/opening-a-pr.md) de-slops the diff before each commit and applies [`/unslop`](../../skills/unslop/SKILL.md) to the PR description and commit bodies. pstack doesn't ship a code de-slop skill. The playbook uses a de-slop or simplify skill when your session lists one, and otherwise hands the diff to your refactoring model for a review pass. Outside the playbook, ask for the same outcome in plain words: remove narrating comments, unsupported guards, dead compatibility paths, and unrelated edits.
+The [Opening a PR playbook](../../skills/poteto-mode/playbooks/opening-a-pr.md) de-slops the full base-to-branch diff once, when the code is ready for review, and applies [`/unslop`](../../skills/unslop/SKILL.md) to the PR description and commit bodies. pstack doesn't ship a code de-slop skill. The playbook uses a de-slop or simplify skill when your session lists one, and otherwise hands the diff to your refactoring model for a review pass. Outside the playbook, ask for the same outcome in plain words: remove narrating comments, unsupported guards, dead compatibility paths, and unrelated edits.
 
 For prose, `/unslop` takes a target and any extra rules you have:
 
@@ -60,13 +60,13 @@ You'll develop your own shorthand. The skill reads intent fine from terse prompt
 
 ## Strip the comments with `/no-comments`
 
-Comments need their own pass, and not from the agent that wrote them. An author defends its comments the way you'd defend yours. So before review, hand them to fresh eyes:
+Comments need their own pass, and not from the agent that wrote them. An author defends its comments the way you'd defend yours. So once per PR, when the code is ready for review, hand them to fresh eyes:
 
 ```text
 /no-comments the diff
 ```
 
-[`/no-comments`](../../skills/no-comments/SKILL.md) spawns [Comment Sicko](../../skills/no-comments/references/comment-sicko.md) as a child thread in your environment, so it deletes comments in your working tree. Its keep list is short: license headers, doc comments on a public API, links that explain what code can't, behavior forced by an external dependency you can't reshape. Everything else goes. A surprise in your own code gets no such pass. The comment comes back as a refactor flag. `/no-comments` then audits Comment Sicko's diff and report, rejects application-code edits and scope escapes, restores a deletion only when a keep-list exception proves it, and fixes the flags it accepts at the root cause. When a comment claims a constraint, "do not remove", the skill offers to encode the claim as a type, test, or lint. Either way, the comment comes out.
+[`/no-comments`](../../skills/no-comments/SKILL.md) spawns [Comment Sicko](../../skills/no-comments/references/comment-sicko.md) as a child thread in your environment, so it deletes comments in your working tree. Its keep list is short: license headers, doc comments on a public API, links that explain what code can't, behavior forced by an external dependency you can't reshape, and a comment that states an invariant, a constraint, or a non-obvious why, whoever wrote the code. Everything else goes. A comment that only narrates a surprise in your own code gets no such pass. It comes back as a refactor flag. `/no-comments` then audits Comment Sicko's diff and report, rejects application-code edits and scope escapes, restores a deletion only when a keep-list exception proves it, and fixes the flags it accepts at the root cause. When a comment claims a constraint, "do not remove", the skill offers to encode the claim as a type, test, or lint. Either way, a bare claim comes out.
 
 The division of labor is worth keeping straight. The de-slop pass cleans slop out of the code, `/unslop` cleans it out of prose, and `/no-comments` hands the comments to an agent that didn't write them.
 

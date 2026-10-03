@@ -28,6 +28,8 @@ Skip Phase A only when the work is genuinely greenfield with no surrounding syst
 
 ## Phase B: Sketch
 
+Run this bakeoff only when the implementation admits materially different shapes and the shape is not already decided; when the user or the PO already agreed on the flow or shape, record `skip: shape decided by <source>` and use the agreed shape as the sketch. When it is unclear whether the shape is decided, ask the user one short question before spawning runners. An agreed shape is a preference call no experiment can settle, so the question passes poteto-mode's "classify it before you ask" rule and does not conflict with the **never-block-on-the-human** principle skill.
+
 Run the **pstack-arena** skill with the design-sketch task and the Phase A grounding artifacts. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`.
 
 Spawn one runner per entry of your architect runners line, in place of the arena runners line. Each runner's environment and baseline follow the **pstack-arena** skill's Phase A, and a rejected model follows its Phase B.
@@ -43,6 +45,8 @@ Arena returns one synthesized design package. The synthesis decision populates t
 ## Phase C: Agree (opt-in)
 
 Default: proceed directly to implementation with the synthesized design. No human checkpoint.
+
+The exception is a report-only request. When the request says no code, or the deliverable is a report or roadmap, stop after Phase B's synthesis. Deliver the design report, shaped per `references/rationale-template.md`, to `$BB_THREAD_STORAGE/<slug>/` or a docs PR, never only to a managed worktree. Mark Phase D `skip: report-only`, and Phase E with it.
 
 Opt in to a checkpoint when the invoker explicitly asks: "/architect with checkpoint," "stop and show me before implementing," or similar. Then surface the synthesized design and pause for sign-off.
 

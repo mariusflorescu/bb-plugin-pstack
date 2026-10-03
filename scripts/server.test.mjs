@@ -55,13 +55,13 @@ const ON = { potetoMode: "on" };
 
 const NOTES = {
   "claude-code":
-    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
+    "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in TaskCreate; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. Only large-slice sub-coordinators get /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.",
   codex:
-    "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop before commits, no-comments before review. Briefs narrow scope, never gates. Child briefs open with $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
+    "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in $BB_THREAD_STORAGE/checklist.md; reread if unsure. Skip only if allowed. Deslop and no-comments once per PR. Briefs narrow scope, never gates. Only large-slice sub-coordinators get $poteto-mode. Open a PR if the playbook does. Report progress freely; claim done only when every step is.",
 };
 
 const FALLBACK_NOTE =
-  "poteto-mode is on unless the user opts out. Per task, match a playbook and put its steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop before commits, no-comments before review. A brief narrows scope, never gates. Child briefs open with /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
+  "poteto-mode is on unless the user opts out. Per request, put its size, playbook steps, gates and reply rules in your task list; reread it when unsure. Skip only where allowed. Deslop and no-comments once per PR. A brief narrows scope, never gates. Only large-slice sub-coordinators get /poteto-mode. If the playbook opens a PR, open it. Report progress freely; claim done only when every step is.";
 
 const OWNER_MODELS = `feature, refactoring: claude-code / claude-opus-5-5 @xhigh
 bug-fix: claude-code / claude-fable-5-1 @xhigh
